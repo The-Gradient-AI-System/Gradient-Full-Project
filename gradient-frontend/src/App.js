@@ -3,10 +3,12 @@ import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-
 import styled, { ThemeProvider } from 'styled-components';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
-import Analytics from './pages/Analytics';
+import AnalyticsManager from './pages/AnalyticsManager';
 import Automation from './pages/Automation';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
+import LeadProfile from './pages/LeadProfile';
+import LeadsHistory from './pages/LeadsHistory';
 import Login from './pages/Login';
 import './App.css';
 import { lightTheme, darkTheme } from './styles/theme';
@@ -221,8 +223,10 @@ function InnerApp() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<Analytics />} />
+            <Route path="/" element={<AnalyticsManager />} />
             <Route path="/automation" element={<Automation />} />
+            <Route path="/lead/:email" element={<LeadProfile />} />
+            <Route path="/leads-history" element={<LeadsHistory />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/settings" element={<Settings />} />
           </Route>

@@ -270,10 +270,10 @@ const Header = () => {
                 </Link>
               </MenuItem>
               <MenuItem>
-                <button type="button" onClick={closeMenu}>
+                <Link to="/leads-history" onClick={closeMenu}>
                   <IconCircle>🕒</IconCircle>
                   <span>Історія Лідів</span>
-                </button>
+                </Link>
               </MenuItem>
               <MenuItem>
                 <Link to="/settings" onClick={closeMenu}>

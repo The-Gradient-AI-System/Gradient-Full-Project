@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { FiRefreshCcw, FiSave } from 'react-icons/fi';
 import { getReplyPrompts, updateReplyPrompts } from '../api/client';
@@ -133,7 +133,12 @@ const StatusMessage = styled.p`
 `;
 
 const Settings = () => {
-  const [prompts, setPrompts] = useState({ follow_up: '', recap: '' });
+  const [settings, setSettings] = useState({
+    topBlock: '',
+    bottomBlock: '',
+    styles: { official: '', semi_official: '' },
+    prompts: { follow_up: '', recap: '', quick: '' },
+  });
   const [statusMessage, setStatusMessage] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -143,7 +148,19 @@ const Settings = () => {
       try {
         const data = await getReplyPrompts();
         if (!cancelled && data) {
-          setPrompts(data);
+          setSettings({
+            topBlock: data.topBlock || '',
+            bottomBlock: data.bottomBlock || '',
+            styles: {
+              official: data.styles?.official || '',
+              semi_official: data.styles?.semi_official || '',
+            },
+            prompts: {
+              follow_up: data.prompts?.follow_up || '',
+              recap: data.prompts?.recap || '',
+              quick: data.prompts?.quick || '',
+            },
+          });
         }
       } catch (error) {
         if (!cancelled) {
@@ -159,11 +176,27 @@ const Settings = () => {
     };
   }, []);
 
-  const hasChanges = useMemo(() => Boolean(statusMessage && statusMessage.includes('успішно')), [statusMessage]);
-
   const handlePromptChange = (field) => (event) => {
     const value = event.target.value;
-    setPrompts((prev) => ({ ...prev, [field]: value }));
+    setSettings((prev) => ({
+      ...prev,
+      prompts: { ...prev.prompts, [field]: value },
+    }));
+    setStatusMessage(null);
+  };
+
+  const handleBlockChange = (field) => (event) => {
+    const value = event.target.value;
+    setSettings((prev) => ({ ...prev, [field]: value }));
+    setStatusMessage(null);
+  };
+
+  const handleStyleChange = (field) => (event) => {
+    const value = event.target.value;
+    setSettings((prev) => ({
+      ...prev,
+      styles: { ...(prev.styles || {}), [field]: value },
+    }));
     setStatusMessage(null);
   };
 
@@ -172,7 +205,19 @@ const Settings = () => {
     setStatusMessage(null);
     try {
       const fresh = await getReplyPrompts();
-      setPrompts(fresh || { follow_up: '', recap: '' });
+      setSettings({
+        topBlock: fresh?.topBlock || '',
+        bottomBlock: fresh?.bottomBlock || '',
+        styles: {
+          official: fresh?.styles?.official || '',
+          semi_official: fresh?.styles?.semi_official || '',
+        },
+        prompts: {
+          follow_up: fresh?.prompts?.follow_up || '',
+          recap: fresh?.prompts?.recap || '',
+          quick: fresh?.prompts?.quick || '',
+        },
+      });
       setStatusMessage('Промпти повернуто до збережених значень.');
     } catch (error) {
       setStatusMessage('Не вдалося отримати промпти.');
@@ -185,8 +230,20 @@ const Settings = () => {
     setLoading(true);
     setStatusMessage(null);
     try {
-      const updated = await updateReplyPrompts(prompts);
-      setPrompts(updated || prompts);
+      const updated = await updateReplyPrompts(settings);
+      setSettings({
+        topBlock: updated?.topBlock || settings.topBlock,
+        bottomBlock: updated?.bottomBlock || settings.bottomBlock,
+        styles: {
+          official: updated?.styles?.official || settings.styles.official,
+          semi_official: updated?.styles?.semi_official || settings.styles.semi_official,
+        },
+        prompts: {
+          follow_up: updated?.prompts?.follow_up || settings.prompts.follow_up,
+          recap: updated?.prompts?.recap || settings.prompts.recap,
+          quick: updated?.prompts?.quick || settings.prompts.quick,
+        },
+      });
       setStatusMessage('Промпти успішно збережено.');
     } catch (error) {
       setStatusMessage('Не вдалося зберегти промпти.');
@@ -208,10 +265,50 @@ const Settings = () => {
 
         <PromptGrid>
           <PromptSection>
+            <PromptLabel>Top Block</PromptLabel>
+            <PromptHint>Додається перед основним промптом для кожного варіанту.</PromptHint>
+            <PromptEditor
+              value={settings.topBlock}
+              onChange={handleBlockChange('topBlock')}
+              placeholder="Введіть верхній системний блок"
+            />
+          </PromptSection>
+
+          <PromptSection>
+            <PromptLabel>Bottom Block</PromptLabel>
+            <PromptHint>Додається після основного промпту для кожного варіанту.</PromptHint>
+            <PromptEditor
+              value={settings.bottomBlock}
+              onChange={handleBlockChange('bottomBlock')}
+              placeholder="Введіть нижній системний блок"
+            />
+          </PromptSection>
+
+          <PromptSection>
+            <PromptLabel>Style: Official</PromptLabel>
+            <PromptHint>Додається до промпту, коли обраний офіційний стиль відповіді.</PromptHint>
+            <PromptEditor
+              value={settings.styles.official}
+              onChange={handleStyleChange('official')}
+              placeholder="Введіть модифікатор офіційного стилю"
+            />
+          </PromptSection>
+
+          <PromptSection>
+            <PromptLabel>Style: Semi-official</PromptLabel>
+            <PromptHint>Додається до промпту, коли обраний напів-офіційний стиль відповіді.</PromptHint>
+            <PromptEditor
+              value={settings.styles.semi_official}
+              onChange={handleStyleChange('semi_official')}
+              placeholder="Введіть модифікатор напів-офіційного стилю"
+            />
+          </PromptSection>
+
+          <PromptSection>
             <PromptLabel>Follow-up (після знайомства)</PromptLabel>
             <PromptHint>Стислий лист із подякою, матеріалами та наступним кроком.</PromptHint>
             <PromptEditor
-              value={prompts.follow_up}
+              value={settings.prompts.follow_up}
               onChange={handlePromptChange('follow_up')}
               placeholder="Введіть шаблон follow-up"
             />
@@ -221,9 +318,19 @@ const Settings = () => {
             <PromptLabel>Recap & Proposal (після кваліфікації)</PromptLabel>
             <PromptHint>Підсумок болей клієнта, опис пропозиції та заклик до дії.</PromptHint>
             <PromptEditor
-              value={prompts.recap}
+              value={settings.prompts.recap}
               onChange={handlePromptChange('recap')}
               placeholder="Введіть шаблон recap & proposal"
+            />
+          </PromptSection>
+
+          <PromptSection>
+            <PromptLabel>Quick Reply</PromptLabel>
+            <PromptHint>Максимально коротка відповідь для швидкого фолоу-апу.</PromptHint>
+            <PromptEditor
+              value={settings.prompts.quick}
+              onChange={handlePromptChange('quick')}
+              placeholder="Введіть шаблон quick reply"
             />
           </PromptSection>
         </PromptGrid>

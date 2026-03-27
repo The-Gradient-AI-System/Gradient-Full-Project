@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import styled, { useTheme } from 'styled-components';
-import { getGmailLeads, postGenerateReplies, postLeadStatus } from '../api/client';
+import { getGmailLeads, postGenerateReplies, postLeadStatus, postLeadInsights } from '../api/client';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const PageContainer = styled.div`
@@ -842,6 +843,21 @@ const ModalAlert = styled(ErrorBanner)`
   margin-top: 1.4rem;
 `;
 
+const LinkButton = styled.button`
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: ${({ theme }) => theme.colors.text};
+  border-radius: 12px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  transition: background 0.18s ease, border 0.18s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(104, 123, 255, 0.5);
+  }
+`;
+
 const ModalFooter = styled.div`
   margin-top: 1.8rem;
   padding-bottom: 0.4rem;
@@ -1029,8 +1045,78 @@ const ReplyComposerTextarea = styled.textarea`
 
 const ReplyComposerActions = styled.div`
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 0.75rem;
+`;
+
+const ReplyComposerLeftActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+`;
+
+const AttachmentButton = styled.button`
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: ${({ theme }) => theme.colors.text};
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(104, 125, 255, 0.55);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+`;
+
+const AttachmentList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+`;
+
+const AttachmentChip = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: ${({ theme }) => theme.colors.subtleText};
+  font-size: 0.82rem;
+`;
+
+const AttachmentRemove = styled.button`
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: ${({ theme }) => theme.colors.subtleText};
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text};
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+`;
+
+const HiddenFileInput = styled.input`
+  display: none;
 `;
 
 const ReplyComposerButton = styled.button`
@@ -1113,12 +1199,36 @@ const BADGE_LABELS = {
 
 const getLeadKey = (lead) => {
   if (!lead) return 'unknown';
+  if (lead.gmail_id) return `${lead.gmail_id}`;
   if (lead.id) return `${lead.id}`;
-  const emailOrName = lead.email || lead.full_name || 'lead';
-  return `${emailOrName}-${lead.received_at || ''}`;
+  const email = (lead.email || '').trim().toLowerCase();
+  if (email) return `email:${email}`;
+  const fallback = lead.full_name || 'lead';
+  return `${fallback}-${lead.received_at || ''}`;
 };
 
 const getLeadStatus = (lead) => (lead?.status || 'waiting').toLowerCase();
+
+const isEmptyLeadRow = (lead) => {
+  if (!lead) return true;
+  const email = (lead.email || '').trim();
+  const subject = (lead.subject || '').trim();
+  const body = (lead.body || '').trim();
+  return !email && !subject && !body;
+};
+
+const getLeadCompletenessScore = (lead) => {
+  if (!lead) return 0;
+  let score = 0;
+  if ((lead.email || '').trim()) score += 3;
+  if ((lead.subject || '').trim()) score += 2;
+  if ((lead.body || '').trim()) score += 1;
+  if ((lead.full_name || '').trim()) score += 2;
+  if ((lead.company || lead.company_name || '').trim()) score += 1;
+  if ((lead.phone || '').trim()) score += 1;
+  if ((lead.website || '').trim()) score += 1;
+  return score;
+};
 
 const normalizeLeadInsights = (lead) => {
   if (!lead) return null;
@@ -1249,6 +1359,7 @@ const formatRelative = (value) => {
 const Automation = () => {
   const theme = useTheme();
   const { leadSnapshot, updateLeadSnapshot } = useAuth();
+  const navigate = useNavigate();
   const { data, loading, error, refresh } = useLeadData(leadSnapshot, updateLeadSnapshot);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
@@ -1261,20 +1372,87 @@ const Automation = () => {
   const [statusError, setStatusError] = useState(null);
   const [showReader, setShowReader] = useState(false);
   const [showReplyComposer, setShowReplyComposer] = useState(false);
-  const [replyOptions, setReplyOptions] = useState({ follow_up: '', recap: '' });
+  const [replyOptions, setReplyOptions] = useState({ quick: '', follow_up: '', recap: '' });
+  const [replyOptionsByStyle, setReplyOptionsByStyle] = useState({ official: null, semi_official: null });
   const [selectedReplyKey, setSelectedReplyKey] = useState('');
   const [replyDraft, setReplyDraft] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
   const [replyError, setReplyError] = useState(null);
+  const [replyStyle, setReplyStyle] = useState('semi_official');
+  const [replyAttachments, setReplyAttachments] = useState([]);
+  const fileInputRef = useRef(null);
 
   const leads = useMemo(() => data?.leads ?? [], [data]);
+
+  const orderedLeads = useMemo(() => {
+    const cleaned = (leads || []).filter((lead) => !isEmptyLeadRow(lead));
+    return cleaned
+      .map((lead) => ({
+        ...lead,
+        _receivedAt: parseDate(lead.received_at),
+        _score: getLeadCompletenessScore(lead),
+      }))
+      .sort((a, b) => {
+        if (a._score !== b._score) return b._score - a._score;
+        const aTime = a._receivedAt ? a._receivedAt.getTime() : 0;
+        const bTime = b._receivedAt ? b._receivedAt.getTime() : 0;
+        return bTime - aTime;
+      })
+      .map(({ _receivedAt, _score, ...rest }) => rest);
+  }, [leads]);
+
+  const dedupedLeads = useMemo(() => {
+    const byEmail = new Map();
+    const counts = new Map();
+
+    const keyFor = (lead) => {
+      const email = (lead?.email || '').trim().toLowerCase();
+      if (email) return `email:${email}`;
+      const gid = (lead?.gmail_id || '').trim();
+      return gid ? `gmail:${gid}` : `row:${lead?.sheet_row || lead?.sheetRow || ''}`;
+    };
+
+    orderedLeads.forEach((lead) => {
+      const key = keyFor(lead);
+      counts.set(key, (counts.get(key) || 0) + 1);
+
+      const current = byEmail.get(key);
+      if (!current) {
+        byEmail.set(key, lead);
+        return;
+      }
+
+      const currentDate = parseDate(current.received_at);
+      const nextDate = parseDate(lead.received_at);
+      const currentTime = currentDate ? currentDate.getTime() : 0;
+      const nextTime = nextDate ? nextDate.getTime() : 0;
+
+      if (nextTime > currentTime) {
+        byEmail.set(key, lead);
+        return;
+      }
+      if (nextTime === currentTime) {
+        const currentScore = getLeadCompletenessScore(current);
+        const nextScore = getLeadCompletenessScore(lead);
+        if (nextScore > currentScore) byEmail.set(key, lead);
+      }
+    });
+
+    return Array.from(byEmail.entries())
+      .map(([key, lead]) => ({ ...lead, _messagesFromEmail: counts.get(key) || 1 }))
+      .sort((a, b) => {
+        const aTime = (parseDate(a.received_at)?.getTime() || 0);
+        const bTime = (parseDate(b.received_at)?.getTime() || 0);
+        return bTime - aTime;
+      });
+  }, [orderedLeads]);
 
   const filteredLeads = useMemo(() => {
     const text = searchTerm.trim().toLowerCase();
     const now = new Date();
     const rangeLimitMs = rangeFilter ? rangeFilter * 24 * 60 * 60 * 1000 : null;
 
-    return leads.filter((lead) => {
+    return dedupedLeads.filter((lead) => {
       const leadDate = parseDate(lead.received_at);
       if (rangeLimitMs && leadDate) {
         if (now.getTime() - leadDate.getTime() > rangeLimitMs) {
@@ -1309,7 +1487,7 @@ const Automation = () => {
 
       return haystack.includes(text);
     });
-  }, [leads, stageFilter, searchTerm, rangeFilter, decisions]);
+  }, [dedupedLeads, stageFilter, searchTerm, rangeFilter, decisions]);
 
   const summary = data?.stats ?? {};
 
@@ -1327,7 +1505,7 @@ const Automation = () => {
     let rejected = 0;
     let qualified = 0;
 
-    leads.forEach((lead) => {
+    dedupedLeads.forEach((lead) => {
       const decisionStatus = decisions[getLeadKey(lead)]?.status;
       const status = (decisionStatus ?? getLeadStatus(lead) ?? '').toLowerCase();
 
@@ -1344,7 +1522,7 @@ const Automation = () => {
       }
     });
 
-    const total = leads.length;
+    const total = dedupedLeads.length;
     const processed = confirmed + rejected;
     const processedPct = total ? Math.round((processed / total) * 100) : 0;
 
@@ -1357,7 +1535,7 @@ const Automation = () => {
       processedPercentage: processedPct,
       qualifiedCount: qualified,
     };
-  }, [leads, decisions]);
+  }, [dedupedLeads, decisions]);
 
   const qualifiedShare = totalLeads ? Math.round((qualifiedCount / totalLeads) * 100) : 0;
   const waitingShare = totalLeads ? Math.round((waitingCount / totalLeads) * 100) : 0;
@@ -1380,10 +1558,13 @@ const Automation = () => {
     setShowReader(false);
     setShowReplyComposer(false);
     setInsightsError(null);
-    setReplyOptions({ follow_up: '', recap: '' });
+    setReplyOptions({ quick: '', follow_up: '', recap: '' });
+    setReplyOptionsByStyle({ official: null, semi_official: null });
     setSelectedReplyKey('');
     setReplyDraft('');
     setReplyError(null);
+    setReplyStyle('semi_official');
+    setReplyAttachments([]);
   }, []);
 
   const toggleRangeMenu = useCallback(() => {
@@ -1398,8 +1579,33 @@ const Automation = () => {
     setShowReplyComposer(false);
     setReplyDraft('');
     setSelectedReplyKey('');
-    setReplyOptions({ follow_up: '', recap: '' });
+    setReplyOptions({ quick: '', follow_up: '', recap: '' });
+    setReplyOptionsByStyle({ official: null, semi_official: null });
     setReplyError(null);
+    setReplyStyle('semi_official');
+    setReplyAttachments([]);
+  }, []);
+
+  const handlePickAttachments = useCallback(() => {
+    fileInputRef.current?.click?.();
+  }, []);
+
+  const handleFilesSelected = useCallback((event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    setReplyAttachments((prev) => {
+      const next = [...prev];
+      files.forEach((f) => {
+        const id = `${f.name}-${f.size}-${f.lastModified}`;
+        if (!next.some((x) => x.id === id)) next.push({ id, file: f });
+      });
+      return next;
+    });
+    event.target.value = '';
+  }, []);
+
+  const removeAttachment = useCallback((id) => {
+    setReplyAttachments((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
   const handleSelectRange = (value) => {
@@ -1407,15 +1613,32 @@ const Automation = () => {
     setRangeMenuOpen(false);
   };
 
-  const handleRowClick = (lead) => {
+  const handleRowClick = async (lead) => {
     setSelectedLead(lead);
     setShowReader(false);
     setShowReplyComposer(false);
     setInsightsError(null);
-    setReplyOptions({ follow_up: '', recap: '' });
+    setReplyOptions({ quick: '', follow_up: '', recap: '' });
     setSelectedReplyKey('');
     setReplyDraft('');
     setReplyError(null);
+    setReplyStyle('semi_official');
+
+    try {
+      const needsEnrichment = !lead?.full_name && !lead?.company_info && !lead?.person_summary;
+      if (!needsEnrichment) return;
+
+      const enriched = await postLeadInsights({
+        sender: lead.email || 'unknown@example.com',
+        subject: lead.subject || '',
+        body: lead.body || '',
+      });
+      if (enriched) {
+        setSelectedLead((prev) => ({ ...(prev || lead), ...enriched }));
+      }
+    } catch (err) {
+      setInsightsError(err?.message || 'Не вдалося завантажити інсайти.');
+    }
   };
 
   const handleRowKeyDown = (event, lead) => {
@@ -1432,37 +1655,63 @@ const Automation = () => {
     setReplyDraft(replyOptions[key] || '');
   };
 
-  const handleGenerateReplies = useCallback(async () => {
+  const handleGenerateReplies = useCallback(async (nextStyle, options = {}) => {
     if (!selectedLead) return;
     setReplyLoading(true);
     setReplyError(null);
     try {
-      const payload = {
+      const styleToUse = nextStyle || replyStyle || 'semi_official';
+      if (nextStyle) {
+        setReplyStyle(nextStyle);
+      }
+      const cached = replyOptionsByStyle?.[styleToUse];
+      if (cached && !options?.force) {
+        setReplyOptions(cached);
+        const priorityOrder = ['quick', 'follow_up', 'recap'];
+        const populatedKeys = priorityOrder.filter((key) => (cached[key] || '').trim());
+        const primaryKey = populatedKeys[0] || '';
+        const preserveSelectedKey = Boolean(options?.preserveSelectedKey);
+        const preferredKey =
+          preserveSelectedKey && selectedReplyKey && (cached[selectedReplyKey] || '').trim() ? selectedReplyKey : primaryKey;
+        setSelectedReplyKey(preferredKey);
+        setReplyDraft(preferredKey ? cached[preferredKey] : '');
+        return;
+      }
+      const response = await postGenerateReplies({
         sender: selectedLead.email || 'unknown@example.com',
         subject: selectedLead.subject || '',
         body: selectedLead.body || '',
         lead: selectedLead,
-      };
-      const response = await postGenerateReplies(payload);
+        style: styleToUse,
+      });
+
       const replies = response?.replies || {};
       const normalizedReplies = {
+        quick: typeof replies.quick === 'string' ? replies.quick : '',
         follow_up: typeof replies.follow_up === 'string' ? replies.follow_up : '',
         recap: typeof replies.recap === 'string' ? replies.recap : '',
       };
 
       setReplyOptions(normalizedReplies);
+      setReplyOptionsByStyle((prev) => ({ ...(prev || {}), [styleToUse]: normalizedReplies }));
 
-      const priorityOrder = ['follow_up', 'recap'];
+      const priorityOrder = ['quick', 'follow_up', 'recap'];
       const populatedKeys = priorityOrder.filter((key) => (normalizedReplies[key] || '').trim());
       const primaryKey = populatedKeys[0] || '';
 
-      setSelectedReplyKey(primaryKey);
-      setReplyDraft(primaryKey ? normalizedReplies[primaryKey] : '');
+      const preserveSelectedKey = Boolean(options?.preserveSelectedKey);
+      const preferredKey =
+        preserveSelectedKey && selectedReplyKey && (normalizedReplies[selectedReplyKey] || '').trim()
+          ? selectedReplyKey
+          : primaryKey;
+
+      setSelectedReplyKey(preferredKey);
+      setReplyDraft(preferredKey ? normalizedReplies[preferredKey] : '');
       setShowReplyComposer(true);
       if (!populatedKeys.length) {
         setReplyError('Модель не повернула відповідей. Спробуйте пізніше.');
       } else if (populatedKeys.length === 1) {
-        setReplyError('Згенеровано лише один варіант. Перевірте обидва шаблони у налаштуваннях.');
+        setReplyError('Згенеровано лише один варіант. Перевірте шаблони у налаштуваннях.');
       }
     } catch (error) {
       setReplyError(error?.message || 'Не вдалося згенерувати відповідь.');
@@ -1470,7 +1719,7 @@ const Automation = () => {
     } finally {
       setReplyLoading(false);
     }
-  }, [selectedLead]);
+  }, [selectedLead, replyStyle, selectedReplyKey, replyOptionsByStyle]);
 
   const refreshAndSync = useCallback(async () => {
     await refresh({ isManualRefresh: true });
@@ -1478,16 +1727,27 @@ const Automation = () => {
 
   const handleConfirmClick = useCallback(async () => {
     if (!selectedLead || replyLoading) return;
-    await handleGenerateReplies();
-  }, [selectedLead, replyLoading, handleGenerateReplies]);
+    // Open immediately, then fill content as it arrives.
+    setShowReplyComposer(true);
+    setReplyError(null);
+    setReplyDraft('');
+    setReplyOptions({ quick: '', follow_up: '', recap: '' });
+    setSelectedReplyKey('quick');
+    // Force fetch to ensure latest Settings (top/bottom blocks + prompts) are applied.
+    void handleGenerateReplies(replyStyle, { preserveSelectedKey: true, force: true });
+    // Pre-warm the other style in background for instant toggle.
+    const otherStyle = replyStyle === 'official' ? 'semi_official' : 'official';
+    void handleGenerateReplies(otherStyle, { preserveSelectedKey: true });
+  }, [selectedLead, replyLoading, handleGenerateReplies, replyStyle]);
 
   const handleDecision = useCallback(
     async (status) => {
       if (!selectedLead) return;
 
+      const gmailId = selectedLead.gmail_id;
       const rowNumber = selectedLead.sheet_row || selectedLead.sheetRow;
-      if (!rowNumber) {
-        setStatusError('Не знайдено рядок у Google Sheets для вибраного ліда.');
+      if (!gmailId && !rowNumber) {
+        setStatusError('Не знайдено ідентифікатор ліда для збереження статусу.');
         return;
       }
 
@@ -1504,7 +1764,11 @@ const Automation = () => {
       closeModal();
 
       try {
-        await postLeadStatus({ row_number: rowNumber, status });
+        if (gmailId) {
+          await postLeadStatus({ gmail_id: gmailId, status });
+        } else {
+          await postLeadStatus({ row_number: rowNumber, status });
+        }
         await refresh({ isManualRefresh: true });
         setDecisions((prev) => {
           const { [getLeadKey(selectedLead)]: _removed, ...rest } = prev;
@@ -1516,7 +1780,7 @@ const Automation = () => {
           delete updated[getLeadKey(selectedLead)];
           return updated;
         });
-        setStatusError(error instanceof Error ? error.message : 'Не вдалося оновити статус у Sheets.');
+        setStatusError(error instanceof Error ? error.message : 'Не вдалося оновити статус.');
       }
     },
     [selectedLead, closeModal, refresh]
@@ -1611,7 +1875,7 @@ const Automation = () => {
           </RangeSelector>
         </Filters>
         <span style={{ color: theme.colors.subtleText, fontSize: '0.95rem' }}>
-          Показано {filteredLeads.length} / {leads.length}
+          Показано {filteredLeads.length} / {dedupedLeads.length}
         </span>
       </ControlsRow>
 
@@ -1663,7 +1927,7 @@ const Automation = () => {
 
                   return (
                     <tr
-                      key={`${lead.email}-${lead.received_at}-${index}`}
+                      key={`${(lead.email || lead.gmail_id || index).toString()}-${index}`}
                       tabIndex={0}
                       onClick={() => handleRowClick(lead)}
                       onKeyDown={(event) => handleRowKeyDown(event, lead)}
@@ -1672,6 +1936,7 @@ const Automation = () => {
                       <td>
                         <LeadName>{displayName}</LeadName>
                         <LeadEmail>{lead.email || 'email не вказано'}</LeadEmail>
+                        {lead._messagesFromEmail > 1 && <LeadMeta>Останній лист • ще {lead._messagesFromEmail - 1} з цього email</LeadMeta>}
                         {lead.person_summary && <LeadMeta>{lead.person_summary}</LeadMeta>}
                       </td>
                       <td>
@@ -1805,7 +2070,7 @@ const Automation = () => {
                             </SummaryBlock>
                             {!!selectedInsights?.person_links?.length && (
                               <TagRow>
-                                {selectedInsights.person_links.map((link) => (
+                                {selectedInsights.person_links.slice(0, 3).map((link) => (
                                   <TagChip as="a" key={link} href={link} target="_blank" rel="noopener noreferrer">
                                     {link}
                                   </TagChip>
@@ -1814,7 +2079,7 @@ const Automation = () => {
                             )}
                             {!!selectedInsights?.person_insights?.length && (
                               <SearchResults>
-                                {selectedInsights.person_insights.map((item, index) => (
+                                {selectedInsights.person_insights.slice(0, 3).map((item, index) => (
                                   <SearchResultCard key={`${item.url || index}-${index}`}>
                                     <strong>{item.title || `Згадка ${index + 1}`}</strong>
                                     {item.snippet && <span>{item.snippet}</span>}
@@ -1861,7 +2126,7 @@ const Automation = () => {
                             )}
                             {!!selectedCompanyInsights.length && (
                               <SearchResults>
-                                {selectedCompanyInsights.map((entry, index) => (
+                                {selectedCompanyInsights.slice(0, 3).map((entry, index) => (
                                   <SearchResultCard key={`${entry.url || index}-${index}`}>
                                     <strong>{entry.title || `Результат ${index + 1}`}</strong>
                                     {entry.snippet && <span>{entry.snippet}</span>}
@@ -1884,6 +2149,14 @@ const Automation = () => {
                       <ReaderToggleButton type="button" onClick={toggleReader} $active={showReader}>
                         {showReader ? 'Сховати лист' : 'Показати лист'}
                       </ReaderToggleButton>
+                      {selectedLead?.email && (
+                        <LinkButton
+                          type="button"
+                          onClick={() => navigate(`/lead/${encodeURIComponent(selectedLead.email)}`)}
+                        >
+                          Профіль ліда
+                        </LinkButton>
+                      )}
                     </FooterSecondaryActions>
                     <FooterPrimaryActions>
                       <ActionButton type="button" $variant="snooze" onClick={() => handleDecision('snoozed')}>
@@ -1953,7 +2226,26 @@ const Automation = () => {
               <ReplyComposerClose type="button" onClick={closeReplyComposer} aria-label="Закрити">×</ReplyComposerClose>
             </ReplyComposerHeader>
             <ReplyVariantsRow>
-              {['follow_up', 'recap'].map((key) => (
+              {[
+                { key: 'official', label: 'Офіційний' },
+                { key: 'semi_official', label: 'Напів-офіційний' },
+              ].map((item) => (
+                <ReplyVariantButton
+                  key={item.key}
+                  type="button"
+                  $active={replyStyle === item.key}
+                  onClick={async () => {
+                    setReplyStyle(item.key);
+                    await handleGenerateReplies(item.key, { preserveSelectedKey: true });
+                  }}
+                  disabled={replyLoading}
+                >
+                  {item.label}
+                </ReplyVariantButton>
+              ))}
+            </ReplyVariantsRow>
+            <ReplyVariantsRow>
+              {['quick', 'follow_up', 'recap'].map((key) => (
                 <ReplyVariantButton
                   key={key}
                   type="button"
@@ -1961,30 +2253,58 @@ const Automation = () => {
                   onClick={() => handleSelectReplyOption(key)}
                   disabled={!(replyOptions[key] || '').trim()}
                 >
-                  {key === 'follow_up' ? 'Follow-up' : 'Recap & Proposal'}
+                  {key === 'quick' ? 'Quick' : key === 'follow_up' ? 'Follow-up' : 'Recap & Proposal'}
                 </ReplyVariantButton>
               ))}
             </ReplyVariantsRow>
             <SectionHint>
-              {selectedReplyKey === 'follow_up'
+              {selectedReplyKey === 'quick'
+                ? 'Дуже короткий варіант для швидкої відповіді.'
+                : selectedReplyKey === 'follow_up'
                 ? 'Варіант м’якого фолоу-апу після знайомства.'
                 : 'Варіант з рекепом болей та пропозицією рішення.'}
             </SectionHint>
             {replyError && <ReplyStatusMessage $error>{replyError}</ReplyStatusMessage>}
             {!replyError && !replyDraft && (
-              <ReplyStatusMessage>Відповідь порожня — відредагуйте вручну перед надсиланням.</ReplyStatusMessage>
+              <ReplyStatusMessage>{replyLoading ? 'Генеруємо відповідь…' : 'Відповідь порожня — відредагуйте вручну перед надсиланням.'}</ReplyStatusMessage>
             )}
             <ReplyComposerTextarea
               value={replyDraft}
               onChange={(event) => setReplyDraft(event.target.value)}
             />
             <ReplyComposerActions>
-              <ReplyComposerButton type="button" onClick={closeReplyComposer}>
-                Скасувати
-              </ReplyComposerButton>
-              <ReplyComposerButton type="button" $primary onClick={() => handleDecision('confirmed')}>
-                Відповісти та підтвердити
-              </ReplyComposerButton>
+              <ReplyComposerLeftActions>
+                <HiddenFileInput
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFilesSelected}
+                />
+                <AttachmentButton type="button" onClick={handlePickAttachments} aria-label="Додати файли">
+                  📎
+                </AttachmentButton>
+                {replyAttachments.length ? (
+                  <AttachmentList>
+                    {replyAttachments.map((item) => (
+                      <AttachmentChip key={item.id}>
+                        {item.file?.name || 'file'}
+                        <AttachmentRemove type="button" onClick={() => removeAttachment(item.id)} aria-label="Видалити">
+                          ×
+                        </AttachmentRemove>
+                      </AttachmentChip>
+                    ))}
+                  </AttachmentList>
+                ) : null}
+              </ReplyComposerLeftActions>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <ReplyComposerButton type="button" onClick={closeReplyComposer}>
+                  Скасувати
+                </ReplyComposerButton>
+                <ReplyComposerButton type="button" $primary onClick={() => handleDecision('confirmed')}>
+                  Відповісти та підтвердити
+                </ReplyComposerButton>
+              </div>
             </ReplyComposerActions>
           </ReplyComposerContent>
         </ReplyComposerOverlay>

@@ -12,7 +12,7 @@ import re
 
 import requests
 
-from service.settingsService import get_reply_prompts
+from service.settingsService import get_reply_settings
 
 load_dotenv()
 
@@ -39,7 +39,7 @@ _company_search_struct_cache: Dict[str, list[dict[str, str]]] = {}
 _person_search_cache: Dict[str, list[dict[str, str]]] = {}
 
 MAX_REPLY_WORDS = 140
-REPLY_VARIANTS = ("follow_up", "recap")
+REPLY_VARIANTS = ("follow_up", "recap", "quick")
 
 
 def _to_serializable(value: Any) -> Any:
@@ -202,14 +202,28 @@ def _build_reply_messages(rendered_prompt: str, context: str) -> list[dict[str, 
     ]
 
 
+def _apply_reply_blocks(prompt_text: str, top_block: str, bottom_block: str) -> str:
+    parts = [part.strip() for part in (top_block, prompt_text, bottom_block) if isinstance(part, str) and part.strip()]
+    return "\n\n".join(parts).strip()
+
+
 def generate_email_replies(
     *,
     lead: dict[str, Any] | None,
     email: dict[str, Any] | None,
     placeholders: dict[str, Any] | None = None,
     prompt_overrides: dict[str, str] | None = None,
+    style: str | None = None,
 ) -> dict[str, str]:
-    stored_prompts = get_reply_prompts()
+    settings = get_reply_settings()
+    stored_prompts = settings.get("prompts", {}) if isinstance(settings, dict) else {}
+    top_block = settings.get("topBlock", "") if isinstance(settings, dict) else ""
+    bottom_block = settings.get("bottomBlock", "") if isinstance(settings, dict) else ""
+    styles = settings.get("styles", {}) if isinstance(settings, dict) else {}
+    style_key = (style or "").strip().lower()
+    style_modifier = ""
+    if style_key in {"official", "semi_official"} and isinstance(styles, dict):
+        style_modifier = str(styles.get(style_key) or "")
     prompts: dict[str, str] = {
         variant: (stored_prompts.get(variant) or "")
         for variant in REPLY_VARIANTS
@@ -227,6 +241,9 @@ def generate_email_replies(
     for variant in REPLY_VARIANTS:
         template = prompts.get(variant, "")
         rendered_prompt = _render_prompt(template, mapping)
+        if style_modifier:
+            rendered_prompt = _apply_reply_blocks(rendered_prompt, style_modifier, "")
+        rendered_prompt = _apply_reply_blocks(rendered_prompt, str(top_block), str(bottom_block))
 
         if not rendered_prompt:
             replies[variant] = ""
@@ -247,7 +264,8 @@ def generate_email_replies(
                 print(f"[AI] generate_email_replies error for {variant}: {exc}")
             content = ""
 
-        replies[variant] = _enforce_word_limit(content or "")
+        max_words = 60 if variant == "quick" else MAX_REPLY_WORDS
+        replies[variant] = _enforce_word_limit(content or "", max_words=max_words)
 
     return replies
 
