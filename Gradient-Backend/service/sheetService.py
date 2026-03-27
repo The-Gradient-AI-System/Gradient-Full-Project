@@ -38,12 +38,16 @@ def append_to_sheet(rows: list[list[str]]):
     if not rows:
         return
 
+    spreadsheet_id = os.getenv("SPREADSHEET_ID")
+    if not spreadsheet_id:
+        raise ValueError("SPREADSHEET_ID not set in environment")
+
     service = _get_sheet_service()
 
     body = {"values": rows}
 
     service.spreadsheets().values().append(
-        spreadsheetId=os.getenv("SPREADSHEET_ID"),
+        spreadsheetId=spreadsheet_id,
         range="A:T",
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
@@ -327,14 +331,14 @@ def build_leads_payload_from_db(limit: int | None = 120, user_info: dict | None 
         # Admin sees all leads with assignment info
         query = """
             SELECT 
-                gmail_id, status, first_name, last_name, full_name, email, subject, 
-                received_at, company, body, phone, website, company_name, company_info,
-                person_role, person_links, person_location, person_experience, person_summary,
-                person_insights, company_insights, assigned_to, assigned_at, synced_at, created_at,
+                gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
+                gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
+                gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
+                gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
                 u.username as assigned_username, u.role as assigned_role
             FROM gmail_messages gm
             LEFT JOIN users u ON gm.assigned_to = u.id
-            ORDER BY created_at DESC
+            ORDER BY gm.created_at DESC
             LIMIT ?
         """
         leads_data = conn.execute(query, [limit]).fetchall()

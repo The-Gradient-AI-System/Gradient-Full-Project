@@ -64,6 +64,7 @@ def mark_as_processed(msg_id: str):
         "INSERT OR IGNORE INTO processed_emails (gmail_id) VALUES (?)",
         [msg_id]
     )
+    conn.commit()
 
 
 def extract_email(from_header: str) -> str:
@@ -130,16 +131,18 @@ def _store_message(gmail_id: str, values: list[str]) -> None:
             """,
             [gmail_id, *values]
         )
+        conn.commit()
     else:
         assignments = ", ".join(f"{col} = ?" for col in _MESSAGE_VALUE_COLUMNS)
         conn.execute(
             f"""
             UPDATE gmail_messages
-            SET {assignments}
+            SET {assignments}, synced_at = NULL
             WHERE gmail_id = ?
             """,
             [*values, gmail_id]
         )
+    conn.commit()
 
 
 def get_unsynced_message_rows(limit: int | None = None) -> list[tuple[str, list[str]]]:
@@ -178,6 +181,7 @@ def mark_messages_synced(gmail_ids: list[str]) -> None:
         """,
         gmail_ids
     )
+    conn.commit()
 
 
 def _normalize_cell(value):
