@@ -91,7 +91,16 @@ export const postGmailSync = () =>
     method: 'POST',
   });
 
-export const getGmailLeads = () => request('/gmail/leads');
+export const getGmailLeads = () => {
+  console.log('[DEBUG] Fetching gmail leads...');
+  return request('/gmail/leads').then(response => {
+    console.log('[DEBUG] getGmailLeads response:', response);
+    return response;
+  }).catch(error => {
+    console.error('[DEBUG] getGmailLeads error:', error);
+    throw error;
+  });
+};
 
 export const postLeadInsights = (payload) =>
   request('/gmail/lead-insights', {

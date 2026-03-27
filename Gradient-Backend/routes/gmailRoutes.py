@@ -30,13 +30,21 @@ def get_leads(
     limit: int | None = Query(default=120, ge=1, le=500),
     user_info: dict | None = Depends(get_user_from_token)
 ):
-    if user_info:
-        # Use role-based filtering from database
-        payload = build_leads_payload_from_db(limit, user_info)
-    else:
-        # Fallback to original sheet-based approach
-        payload = build_leads_payload(limit)
-    return payload
+    print(f"[DEBUG] get_leads called, user_info: {user_info}")
+    try:
+        if user_info:
+            # Use role-based filtering from database
+            payload = build_leads_payload_from_db(limit, user_info)
+        else:
+            # Fallback to original sheet-based approach
+            payload = build_leads_payload(limit)
+        print(f"[DEBUG] Returning payload with {len(payload.get('leads', []))} leads, stats: {payload.get('stats')}")
+        return payload
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] get_leads failed: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 class LeadInsightRequest(BaseModel):
