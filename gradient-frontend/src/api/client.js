@@ -91,35 +91,25 @@ const parseJsonSafely = async response => {
 
 
 const request = async (path, options = {}) => {
-
   const headers = new Headers(options.headers || {});
-
-  headers.set('Content-Type', 'application/json');
-
-
+  const isFormData =
+    typeof FormData !== 'undefined' && options?.body && options.body instanceof FormData;
+  // For FormData we must NOT set Content-Type manually (browser adds proper boundary).
+  if (!isFormData) {
+    headers.set('Content-Type', 'application/json');
+  }
 
   if (!authToken) {
-
     loadAuthToken();
-
   }
-
-
 
   if (authToken && !headers.has('Authorization')) {
-
     headers.set('Authorization', `Bearer ${authToken}`);
-
   }
 
-
-
   const response = await fetch(`${API_URL}${path}`, {
-
     ...options,
-
     headers,
-
   });
 
 
@@ -184,24 +174,9 @@ export const postGmailSync = () =>
 
 
 
-export const getGmailLeads = () => {
-
-  console.log('[DEBUG] Fetching gmail leads...');
-
-  return request('/gmail/leads').then(response => {
-
-    console.log('[DEBUG] getGmailLeads response:', response);
-
-    return response;
-
-  }).catch(error => {
-
-    console.error('[DEBUG] getGmailLeads error:', error);
-
-    throw error;
-
-  });
-
+export const getGmailLeads = (rangeDays = null) => {
+  const qs = rangeDays ? `?range_days=${encodeURIComponent(rangeDays)}` : '';
+  return request(`/gmail/leads${qs}`);
 };
 
 
@@ -258,12 +233,31 @@ export const getReplyPrompts = () => request('/settings/reply-prompts');
 
 
 export const updateReplyPrompts = (payload) =>
-
   request('/settings/reply-prompts', {
-
     method: 'PUT',
-
     body: JSON.stringify(payload),
-
   });
 
+export const sendEmailWithAttachments = (payload) => {
+  const formData = new FormData();
+
+  // Add text fields
+  Object.keys(payload).forEach(key => {
+    if (key !== 'attachments') {
+      formData.append(key, payload[key]);
+    }
+  });
+
+  // Add files
+  if (payload.attachments) {
+    payload.attachments.forEach(file => {
+      formData.append('attachments', file);
+    });
+  }
+
+  return request('/email/send', {
+    method: 'POST',
+    body: formData,
+    headers: {}, // Let browser set Content-Type for FormData
+  });
+};

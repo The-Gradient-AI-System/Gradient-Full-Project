@@ -93,6 +93,8 @@ def init_db():
     )
     """)
 
+    _ensure_column("lead_status_history", "rejection_reason", "TEXT")
+
     conn.execute("""
     CREATE TABLE IF NOT EXISTS app_settings (
         key TEXT PRIMARY KEY,

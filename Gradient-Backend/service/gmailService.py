@@ -6,12 +6,18 @@ import json
 
 from db import conn
 from service.aiService import analyze_email
+from service.leadIntentService import detect_sales_intent
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CREDENTIALS_DIR = BASE_DIR / "credentials"
 TOKEN_FILE = CREDENTIALS_DIR / "token.json"
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Unified scopes for the entire application (Gmail + Sheets)
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
 
 _MESSAGE_VALUE_COLUMNS = [
     "status",
@@ -253,6 +259,10 @@ def fetch_new_gmail_data(limit: int = 20):
 
         parsed = analyze_email(subject=subject, body=body, sender=sender_email)
 
+        intent = detect_sales_intent(subject=subject, body=body)
+        # Special status for leads that look like they want a call/demo.
+        lead_status = 'call_lead' if intent.get('pending_review') else 'NEW'
+
         # Prioritize name from signature/body if available
         final_sender_name = parsed.get("full_name") if parsed.get("full_name") else sender_name
         
@@ -271,7 +281,7 @@ def fetch_new_gmail_data(limit: int = 20):
         company_insights_value = json.dumps(parsed.get("company_insights") or [], ensure_ascii=False)
 
         row = [
-            "NEW",  # status - new lead status
+            lead_status,  # status - dynamic based on sales intent detection
             first_name,
             last_name,
             final_sender_name,
