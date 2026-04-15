@@ -63,18 +63,41 @@ def assign_lead_to_user(gmail_id: str, user_info: dict):
             detail="Lead is already assigned"
         )
     
-    # Assign lead to user
+    # Assign lead to user and update status to ASSIGNED
     conn.execute(
-        "UPDATE gmail_messages SET assigned_to = ?, assigned_at = ? WHERE gmail_id = ?",
+        "UPDATE gmail_messages SET assigned_to = ?, assigned_at = ?, status = 'ASSIGNED' WHERE gmail_id = ?",
         [user_info["id"], datetime.now(), gmail_id]
     )
     
+    # Add status history entry
+    import uuid
+    history_id = str(uuid.uuid4())
+    lead_data = conn.execute(
+        "SELECT full_name FROM gmail_messages WHERE gmail_id = ?",
+        [gmail_id]
+    ).fetchone()
+    lead_name = lead_data[0] if lead_data else None
+    
+    conn.execute(
+        """
+        INSERT INTO lead_status_history (id, gmail_id, status, assignee, lead_name)
+        VALUES (?, ?, 'ASSIGNED', ?, ?)
+        """,
+        [history_id, gmail_id, user_info["username"], lead_name]
+    )
+    
     conn.commit()
-    return {"message": "Lead assigned successfully", "gmail_id": gmail_id, "assigned_to": user_info["username"]}
+    return {"message": "Lead assigned successfully", "gmail_id": gmail_id, "assigned_to": user_info["username"], "status": "ASSIGNED"}
 
 def get_user_leads(user_info: dict, limit: int = 120):
-    """Get leads based on user role"""
-    if user_info and user_info.get("role") == "admin":
+    """Get leads based on user role - admin sees all, manager sees assigned or available"""
+    if not user_info:
+        return []
+        
+    user_role = user_info.get("role")
+    user_id = user_info.get("id")
+    
+    if user_role == "admin":
         # Admin sees all leads with assignment info
         query = """
             SELECT 
@@ -90,91 +113,119 @@ def get_user_leads(user_info: dict, limit: int = 120):
         """
         leads = conn.execute(query, [limit]).fetchall()
         
-        # Format results
-        formatted_leads = []
-        for lead in leads:
-            formatted_lead = {
-                "gmail_id": lead[0],
-                "status": lead[1],
-                "first_name": lead[2],
-                "last_name": lead[3],
-                "full_name": lead[4],
-                "email": lead[5],
-                "subject": lead[6],
-                "received_at": lead[7],
-                "company": lead[8],
-                "body": lead[9],
-                "phone": lead[10],
-                "website": lead[11],
-                "company_name": lead[12],
-                "company_info": lead[13],
-                "person_role": lead[14],
-                "person_links": lead[15],
-                "person_location": lead[16],
-                "person_experience": lead[17],
-                "person_summary": lead[18],
-                "person_insights": lead[19],
-                "company_insights": lead[20],
-                "assigned_to": lead[21],
-                "assigned_at": lead[22],
-                "synced_at": lead[23],
-                "created_at": lead[24],
-                "assigned_username": lead[25],
-                "assigned_role": lead[26],
-                #"assigned_display": f"[{lead[26].upper()}] {lead[25]}" if lead[25] else "Unassigned"
-            }
-            formatted_leads.append(formatted_lead)
-        
-        return formatted_leads
-    
-    else:
-        # Manager sees only their assigned leads
-        query = """
-            SELECT 
-                gmail_id, status, first_name, last_name, full_name, email, subject, 
-                received_at, company, body, phone, website, company_name, company_info,
-                person_role, person_links, person_location, person_experience, person_summary,
-                person_insights, company_insights, assigned_to, assigned_at, synced_at, created_at
-            FROM gmail_messages 
-            WHERE assigned_to = ?
-            ORDER BY created_at DESC
-            LIMIT ?
+    elif user_role == "manager":
+        # Check if manager has an active assigned lead (status = 'ASSIGNED')
+        check_query = """
+            SELECT gmail_id FROM gmail_messages 
+            WHERE assigned_to = ? AND status = 'ASSIGNED'
         """
-        leads = conn.execute(query, [user_info["id"], limit]).fetchall()
+        assigned_leads = conn.execute(check_query, [user_id]).fetchall()
         
-        # Format results
-        formatted_leads = []
-        for lead in leads:
-            formatted_lead = {
-                "gmail_id": lead[0],
-                "status": lead[1],
-                "first_name": lead[2],
-                "last_name": lead[3],
-                "full_name": lead[4],
-                "email": lead[5],
-                "subject": lead[6],
-                "received_at": lead[7],
-                "company": lead[8],
-                "body": lead[9],
-                "phone": lead[10],
-                "website": lead[11],
-                "company_name": lead[12],
-                "company_info": lead[13],
-                "person_role": lead[14],
-                "person_links": lead[15],
-                "person_location": lead[16],
-                "person_experience": lead[17],
-                "person_summary": lead[18],
-                "person_insights": lead[19],
-                "company_insights": lead[20],
-                "assigned_to": lead[21],
-                "assigned_at": lead[22],
-                "synced_at": lead[23],
-                "created_at": lead[24]
-            }
-            formatted_leads.append(formatted_lead)
-        
-        return formatted_leads
+        if assigned_leads:
+            # Show only assigned leads
+            assigned_ids = [lead[0] for lead in assigned_leads]
+            placeholders = ','.join(['?' for _ in assigned_ids])
+            query = f"""
+                SELECT 
+                    gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
+                    gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
+                    gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
+                    gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
+                    u.username as assigned_username, u.role as assigned_role
+                FROM gmail_messages gm
+                LEFT JOIN users u ON gm.assigned_to = u.id
+                WHERE gm.gmail_id IN ({placeholders})
+                ORDER BY gm.created_at DESC
+            """
+            leads = conn.execute(query, assigned_ids).fetchall()
+        else:
+            # Show all available leads
+            query = """
+                SELECT 
+                    gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
+                    gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
+                    gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
+                    gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
+                    u.username as assigned_username, u.role as assigned_role
+                FROM gmail_messages gm
+                LEFT JOIN users u ON gm.assigned_to = u.id
+                ORDER BY gm.created_at DESC
+                LIMIT ?
+            """
+            leads = conn.execute(query, [limit]).fetchall()
+    else:
+        return []
+    
+    # Format results
+    formatted_leads = []
+    for lead in leads:
+        formatted_lead = {
+            "gmail_id": lead[0],
+            "status": lead[1],
+            "first_name": lead[2],
+            "last_name": lead[3],
+            "full_name": lead[4],
+            "email": lead[5],
+            "subject": lead[6],
+            "received_at": lead[7],
+            "company": lead[8],
+            "body": lead[9],
+            "phone": lead[10],
+            "website": lead[11],
+            "company_name": lead[12],
+            "company_info": lead[13],
+            "person_role": lead[14],
+            "person_links": lead[15],
+            "person_location": lead[16],
+            "person_experience": lead[17],
+            "person_summary": lead[18],
+            "person_insights": lead[19],
+            "company_insights": lead[20],
+            "assigned_to": lead[21],
+            "assigned_at": lead[22],
+            "synced_at": lead[23],
+            "created_at": lead[24],
+            "assigned_username": lead[25],
+            "assigned_role": lead[26],
+        }
+        formatted_leads.append(formatted_lead)
+    
+    return formatted_leads
+
+def delete_lead_by_gmail_id(gmail_id: str, user_info: dict):
+    """Delete a lead by gmail_id (admin only)"""
+    # Check if lead exists
+    lead_data = conn.execute(
+        "SELECT gmail_id, full_name FROM gmail_messages WHERE gmail_id = ?",
+        [gmail_id]
+    ).fetchone()
+    
+    if not lead_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lead with gmail_id {gmail_id} not found"
+        )
+    
+    lead_name = lead_data[1] if lead_data else None
+    
+    # Delete the lead
+    conn.execute(
+        "DELETE FROM gmail_messages WHERE gmail_id = ?",
+        [gmail_id]
+    )
+    
+    # Log the deletion in history
+    history_id = str(uuid.uuid4())
+    conn.execute(
+        """
+        INSERT INTO lead_status_history (id, gmail_id, status, assignee, lead_name)
+        VALUES (?, ?, 'DELETED', ?, ?)
+        """,
+        [history_id, gmail_id, user_info["username"], lead_name]
+    )
+    
+    conn.commit()
+    return {"message": "Lead deleted successfully", "gmail_id": gmail_id, "deleted_by": user_info["username"]}
 
 def get_available_leads(user_info: dict, limit: int = 50):
     """Get unassigned leads that managers can pick"""

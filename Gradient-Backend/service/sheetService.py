@@ -173,7 +173,7 @@ def fetch_sheet_rows(limit: int | None = 120) -> list[dict[str, str]]:
     return leads
 
 
-ALLOWED_STATUS_VALUES = {"confirmed", "rejected", "snoozed", "waiting", "new"}
+ALLOWED_STATUS_VALUES = {"ASSIGNED", "EMAIL_SENT", "WAITING_REPLY", "CLOSED", "NEW", "LOST", "REPLY_READY", "SNOOZED", "CONFIRMED", "REJECTED"}
 
 
 def update_lead_status(row_number: int, status: str) -> None:
@@ -396,26 +396,59 @@ def build_leads_payload_from_db(limit: int | None = 120, user_info: dict | None 
             
             leads.append(lead_dict)
     
-    elif user_info and user_info.get("role") == "manager":
-        # Manager sees only their assigned leads
-        query = """
-            SELECT 
-                gmail_id, status, first_name, last_name, full_name, email, subject, 
-                received_at, company, body, phone, website, company_name, company_info,
-                person_role, person_links, person_location, person_experience, person_summary,
-                person_insights, company_insights, assigned_to, assigned_at, synced_at, created_at
-            FROM gmail_messages 
-            WHERE assigned_to = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-        """
-        leads_data = conn.execute(query, [user_info["id"], limit]).fetchall()
+    elif user_info and user_info.get("role") in ("manager", "admin"):
+        # Manager and Admin see all leads with assignment info
+        # But if manager has an ASSIGNED lead, show only that lead
+        user_id = user_info.get("id")
+        user_role = user_info.get("role")
+        
+        # Check if manager has an active assigned lead (status = 'ASSIGNED')
+        assigned_leads = []
+        if user_role == "manager" and user_id:
+            check_query = """
+                SELECT gmail_id FROM gmail_messages 
+                WHERE assigned_to = ? AND status = 'ASSIGNED'
+            """
+            assigned_leads = conn.execute(check_query, [user_id]).fetchall()
+        
+        # If manager has assigned leads, show only those
+        if user_role == "manager" and assigned_leads:
+            assigned_ids = [lead[0] for lead in assigned_leads]
+            placeholders = ','.join(['?' for _ in assigned_ids])
+            query = f"""
+                SELECT 
+                    gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
+                    gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
+                    gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
+                    gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
+                    u.username as assigned_username, u.role as assigned_role
+                FROM gmail_messages gm
+                LEFT JOIN users u ON gm.assigned_to = u.id
+                WHERE gm.gmail_id IN ({placeholders})
+                ORDER BY gm.created_at DESC
+            """
+            leads_data = conn.execute(query, assigned_ids).fetchall()
+        else:
+            # Show all leads (unassigned or manager without active assignment)
+            query = """
+                SELECT 
+                    gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
+                    gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
+                    gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
+                    gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
+                    u.username as assigned_username, u.role as assigned_role
+                FROM gmail_messages gm
+                LEFT JOIN users u ON gm.assigned_to = u.id
+                ORDER BY gm.created_at DESC
+                LIMIT ?
+            """
+            leads_data = conn.execute(query, [limit]).fetchall()
         
         leads = []
         for lead in leads_data:
             lead_dict = {
                 "gmail_id": lead[0],
-                "status": lead[1] or "waiting",
+                "status": lead[1] or "NEW",
                 "first_name": lead[2] or "",
                 "last_name": lead[3] or "",
                 "full_name": lead[4] or "",
@@ -438,7 +471,10 @@ def build_leads_payload_from_db(limit: int | None = 120, user_info: dict | None 
                 "assigned_to": lead[21],
                 "assigned_at": lead[22],
                 "synced_at": lead[23],
-                "created_at": lead[24]
+                "created_at": lead[24],
+                "assigned_username": lead[25],
+                "assigned_role": lead[26],
+                "assigned_display": f"[{lead[26].upper()}] {lead[25]}" if lead[25] else "Unassigned"
             }
             
             # Process JSON fields

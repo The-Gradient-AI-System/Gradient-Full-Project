@@ -271,7 +271,7 @@ def fetch_new_gmail_data(limit: int = 20):
         company_insights_value = json.dumps(parsed.get("company_insights") or [], ensure_ascii=False)
 
         row = [
-            "waiting",  # status
+            "NEW",  # status - new lead status
             first_name,
             last_name,
             final_sender_name,
