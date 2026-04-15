@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional
-from service.leadService import get_current_user_role, assign_lead_to_user, get_user_leads, get_available_leads, get_all_leads_for_admin, get_assigned_leads_only
+from service.leadService import get_current_user_role, assign_lead_to_user, get_user_leads, get_available_leads, get_all_leads_for_admin, get_assigned_leads_only, delete_lead_by_gmail_id
 from db import conn
 
 router = APIRouter(prefix="/leads", tags=["Lead Management"])
@@ -105,6 +105,20 @@ def get_assigned_leads(
         "message": "Admin view: Assigned leads only"
     }
 
+@router.delete("/delete")
+def delete_lead(
+    gmail_id: str = Query(..., description="Gmail ID of the lead to delete"),
+    user_info: dict = Depends(get_user_from_token)
+):
+    """Delete a lead (admin only)"""
+    if user_info["role"] != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin can delete leads"
+        )
+    
+    result = delete_lead_by_gmail_id(gmail_id, user_info)
+    return result
 
 @router.get("/{email}")
 def get_lead_profile(email: str):
@@ -167,7 +181,7 @@ def get_lead_profile(email: str):
 
     name = (
         (latest_full_name or "").strip()
-        or [latest_first_name, latest_last_name].filter(Boolean).join(" ")
+        or " ".join(filter(bool, [latest_first_name, latest_last_name]))
         or latest_email
         or "Unknown"
     )

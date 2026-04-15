@@ -201,29 +201,36 @@ def update_lead_status_gmail_id(gmail_id: str, status: str, rejection_reason: st
     """Update lead status in DuckDB by gmail_id"""
     if not gmail_id:
         raise ValueError("gmail_id is required")
-    
+
     normalized_status = (status or "").strip().lower()
     if normalized_status not in ALLOWED_STATUS_VALUES:
         raise ValueError("Unsupported status value")
-    
-    # Update gmail_messages table
-    conn.execute("""
-        UPDATE gmail_messages 
-        SET status = ? 
+
+    conn.execute(
+        """
+        UPDATE gmail_messages
+        SET status = ?
         WHERE gmail_id = ?
-    """, [normalized_status, gmail_id])
-    
-    # Add to lead_status_history
+        """,
+        [normalized_status, gmail_id],
+    )
+
     history_id = f"{gmail_id}_{datetime.now().isoformat()}"
-    lead_name = conn.execute("SELECT full_name FROM gmail_messages WHERE gmail_id = ?", [gmail_id]).fetchone()
+    lead_name = conn.execute(
+        "SELECT full_name FROM gmail_messages WHERE gmail_id = ?",
+        [gmail_id],
+    ).fetchone()
     lead_name = lead_name[0] if lead_name else "Unknown"
-    
-    conn.execute("""
-        INSERT INTO lead_status_history 
+
+    conn.execute(
+        """
+        INSERT INTO lead_status_history
         (id, gmail_id, lead_name, status, rejection_reason, changed_at)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, [history_id, gmail_id, lead_name, normalized_status, rejection_reason, datetime.now()])
-    
+        """,
+        [history_id, gmail_id, lead_name, normalized_status, rejection_reason, datetime.now()],
+    )
+
     conn.commit()
 
 
@@ -274,10 +281,6 @@ def build_leads_payload(limit: int | None = 120) -> dict[str, Any]:
         return build_leads_payload_from_db(limit, dummy_admin)
     except Exception as e:
         print(f"Fallback to Sheets API due to DB error: {e}")
-        # Original fallback logic
-        leads = fetch_sheet_rows(limit)
-        # ... rest of the original logic if needed, but build_leads_payload_from_db is better
-        # For now, let's just make it return from DB as it's our primary storage.
         return build_leads_payload_from_db(limit, {"role": "admin", "id": -1})
 
 
@@ -287,13 +290,13 @@ def build_leads_payload_from_db(
     range_days: int | None = None,
 ) -> dict[str, Any]:
     """Build leads payload from database with role-based filtering"""
-    
+
     # Build query based on user role
     if user_info and user_info.get("role") == "admin":
         # Admin sees all leads with assignment info
         query = """
-            SELECT 
-                gmail_id, status, first_name, last_name, full_name, gm.email, subject, 
+            SELECT
+                gmail_id, status, first_name, last_name, full_name, gm.email, subject,
                 received_at, company, body, phone, website, company_name, company_info,
                 person_role, person_links, person_location, person_experience, person_summary,
                 person_insights, company_insights, assigned_to, assigned_at, synced_at, created_at,
@@ -304,7 +307,7 @@ def build_leads_payload_from_db(
             LIMIT ?
         """
         leads_data = conn.execute(query, [limit]).fetchall()
-        
+
         leads = []
         for lead in leads_data:
             lead_dict = {
@@ -337,7 +340,7 @@ def build_leads_payload_from_db(
                 "assigned_role": lead[26],
                 "assigned_display": f"[{lead[26].upper()}] {lead[25]}" if lead[25] else None
             }
-            
+
             # Process JSON fields
             if lead_dict["person_links"]:
                 try:
@@ -346,7 +349,7 @@ def build_leads_payload_from_db(
                     lead_dict["person_links"] = []
             else:
                 lead_dict["person_links"] = []
-                
+
             for field in ["person_insights", "company_insights"]:
                 if lead_dict[field]:
                     try:
@@ -355,24 +358,24 @@ def build_leads_payload_from_db(
                         lead_dict[field] = []
                 else:
                     lead_dict[field] = []
-            
+
             leads.append(lead_dict)
-    
+
     elif user_info and user_info.get("role") == "manager":
         # Manager sees only their assigned leads
         query = """
-            SELECT 
-                gmail_id, status, first_name, last_name, full_name, email, subject, 
+            SELECT
+                gmail_id, status, first_name, last_name, full_name, email, subject,
                 received_at, company, body, phone, website, company_name, company_info,
                 person_role, person_links, person_location, person_experience, person_summary,
                 person_insights, company_insights, assigned_to, assigned_at, synced_at, created_at
-            FROM gmail_messages 
+            FROM gmail_messages
             WHERE assigned_to = ?
             ORDER BY created_at DESC
             LIMIT ?
         """
         leads_data = conn.execute(query, [user_info["id"], limit]).fetchall()
-        
+
         leads = []
         for lead in leads_data:
             lead_dict = {
@@ -402,7 +405,7 @@ def build_leads_payload_from_db(
                 "synced_at": lead[23],
                 "created_at": lead[24]
             }
-            
+
             # Process JSON fields
             if lead_dict["person_links"]:
                 try:
@@ -411,7 +414,7 @@ def build_leads_payload_from_db(
                     lead_dict["person_links"] = []
             else:
                 lead_dict["person_links"] = []
-                
+
             for field in ["person_insights", "company_insights"]:
                 if lead_dict[field]:
                     try:
@@ -420,13 +423,13 @@ def build_leads_payload_from_db(
                         lead_dict[field] = []
                 else:
                     lead_dict[field] = []
-            
+
             leads.append(lead_dict)
-    
+
     else:
         # No user info, return empty leads
         leads = []
-    
+
     now = datetime.utcnow()
 
     # Optional global range filter (used by Analytics global filter panel).
@@ -461,34 +464,34 @@ def build_leads_payload_from_db(
 
     # Calculate stats
     active_cutoff = now - timedelta(days=range_days if range_days is not None else 30)
-    
+
     total = len(leads)
     qualified_total = 0
     waiting_total = 0
     active_total = 0
-    
+
     month_totals: dict[tuple[int, int], dict[str, int]] = defaultdict(lambda: {"total": 0, "qualified": 0})
     week_totals = [0, 0, 0, 0]
     week_qualified = [0, 0, 0, 0]
-    
+
     for lead in leads:
         lead_dt = _parse_datetime(lead.get("received_at"))
         qualified = _is_qualified(lead)
         if qualified:
             qualified_total += 1
-        
+
         if (lead.get("status") or "waiting").lower() == "waiting" and not qualified:
             waiting_total += 1
-        
+
         if lead_dt:
             if lead_dt >= active_cutoff:
                 active_total += 1
-            
+
             key = (lead_dt.year, lead_dt.month)
             month_totals[key]["total"] += 1
             if qualified:
                 month_totals[key]["qualified"] += 1
-            
+
             diff_days = (now - lead_dt).days
             if diff_days < 0:
                 diff_days = 0
@@ -498,7 +501,7 @@ def build_leads_payload_from_db(
                 week_totals[slot] += 1
                 if qualified:
                     week_qualified[slot] += 1
-    
+
     month_buckets = _generate_month_buckets()
     line_chart = []
     for bucket in month_buckets:
@@ -509,23 +512,23 @@ def build_leads_payload_from_db(
             "pv": bucket_totals["total"],
             "uv": bucket_totals["qualified"],
         })
-    
+
     quarter_chart = line_chart[-3:] if line_chart else []
-    
+
     month_chart = [
         {"name": label, "pv": week_totals[idx], "uv": week_qualified[idx]}
         for idx, label in enumerate(WEEK_LABELS)
     ]
-    
+
     percentage = 0
     if total:
         percentage = int(round((qualified_total / total) * 100))
-    
+
     pie_chart = [
         {"value": percentage},
         {"value": max(0, 100 - percentage)},
     ] if total else [{"value": 0}, {"value": 100}]
-    
+
     stats = {
         "active": active_total,
         "completed": total,
@@ -533,7 +536,7 @@ def build_leads_payload_from_db(
         "qualified": qualified_total,
         "waiting": waiting_total,
     }
-    
+
     pending_groups: list[dict[str, Any]] = []
     pending_buckets: dict[str, list[dict[str, Any]]] = {"3": [], "5": [], "10": []}
 

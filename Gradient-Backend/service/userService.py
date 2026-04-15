@@ -54,7 +54,7 @@ def login_user(user):
     username = user.username or user.email
 
     row = conn.execute(
-        "SELECT username, password FROM users WHERE username = ? OR email = ?",
+        "SELECT username, password, role FROM users WHERE username = ? OR email = ?",
         [username, user.email or username]
     ).fetchone()
 
@@ -64,7 +64,7 @@ def login_user(user):
             detail="Invalid username or password"
         )
 
-    stored_username, hashed_password = row
+    stored_username, hashed_password, user_role = row
 
     if not verify_password(user.password, hashed_password):
         raise HTTPException(
@@ -72,5 +72,5 @@ def login_user(user):
             detail="Invalid username or password"
         )
 
-    access_token = create_access_token({"sub": stored_username})
-    return {"access_token": access_token, "token_type": "bearer"}
+    access_token = create_access_token({"sub": stored_username, "role": user_role or "manager"})
+    return {"access_token": access_token, "token_type": "bearer", "role": user_role or "manager"}

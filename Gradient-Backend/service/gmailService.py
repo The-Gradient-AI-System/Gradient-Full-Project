@@ -70,6 +70,7 @@ def mark_as_processed(msg_id: str):
         "INSERT OR IGNORE INTO processed_emails (gmail_id) VALUES (?)",
         [msg_id]
     )
+    conn.commit()
 
 
 def extract_email(from_header: str) -> str:
@@ -136,16 +137,18 @@ def _store_message(gmail_id: str, values: list[str]) -> None:
             """,
             [gmail_id, *values]
         )
+        conn.commit()
     else:
         assignments = ", ".join(f"{col} = ?" for col in _MESSAGE_VALUE_COLUMNS)
         conn.execute(
             f"""
             UPDATE gmail_messages
-            SET {assignments}
+            SET {assignments}, synced_at = NULL
             WHERE gmail_id = ?
             """,
             [*values, gmail_id]
         )
+    conn.commit()
 
 
 def get_unsynced_message_rows(limit: int | None = None) -> list[tuple[str, list[str]]]:
@@ -184,6 +187,7 @@ def mark_messages_synced(gmail_ids: list[str]) -> None:
         """,
         gmail_ids
     )
+    conn.commit()
 
 
 def _normalize_cell(value):
@@ -257,7 +261,7 @@ def fetch_new_gmail_data(limit: int = 20):
 
         intent = detect_sales_intent(subject=subject, body=body)
         # Special status for leads that look like they want a call/demo.
-        lead_status = 'call_lead' if intent.get('pending_review') else 'waiting'
+        lead_status = 'call_lead' if intent.get('pending_review') else 'NEW'
 
         # Prioritize name from signature/body if available
         final_sender_name = parsed.get("full_name") if parsed.get("full_name") else sender_name
@@ -277,7 +281,7 @@ def fetch_new_gmail_data(limit: int = 20):
         company_insights_value = json.dumps(parsed.get("company_insights") or [], ensure_ascii=False)
 
         row = [
-            lead_status,  # status
+            lead_status,  # status - dynamic based on sales intent detection
             first_name,
             last_name,
             final_sender_name,
