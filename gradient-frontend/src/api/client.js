@@ -172,20 +172,10 @@ export const postGmailSync = () =>
 
   });
 
-<<<<<<< HEAD
-=======
-
-
->>>>>>> 73704b630bf5116c3cf7e2ebfeaedf6eeb0d7d16
 export const getGmailLeads = (rangeDays = null) => {
   const qs = rangeDays ? `?range_days=${encodeURIComponent(rangeDays)}` : '';
   return request(`/gmail/leads${qs}`);
 };
-<<<<<<< HEAD
-=======
-
-
->>>>>>> 73704b630bf5116c3cf7e2ebfeaedf6eeb0d7d16
 
 export const postLeadInsights = (payload) =>
 
@@ -244,40 +234,23 @@ export const updateReplyPrompts = (payload) =>
     body: JSON.stringify(payload),
   });
 
-<<<<<<< HEAD
-export const getLeadProfile = (leadId) =>
-  request(`/leads/${leadId}`);
-
-export const sendEmailWithAttachments = (payload) => {
-  const formData = new FormData();
-  
-=======
 export const sendEmailWithAttachments = (payload) => {
   const formData = new FormData();
 
->>>>>>> 73704b630bf5116c3cf7e2ebfeaedf6eeb0d7d16
   // Add text fields
   Object.keys(payload).forEach(key => {
     if (key !== 'attachments') {
       formData.append(key, payload[key]);
     }
   });
-<<<<<<< HEAD
-  
-=======
 
->>>>>>> 73704b630bf5116c3cf7e2ebfeaedf6eeb0d7d16
   // Add files
   if (payload.attachments) {
     payload.attachments.forEach(file => {
       formData.append('attachments', file);
     });
   }
-<<<<<<< HEAD
-  
-=======
 
->>>>>>> 73704b630bf5116c3cf7e2ebfeaedf6eeb0d7d16
   return request('/email/send', {
     method: 'POST',
     body: formData,
