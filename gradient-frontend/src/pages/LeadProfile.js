@@ -175,7 +175,8 @@ const MailBody = styled.div`
   opacity: 0.95;
 `;
 
-const statuses = ['NEW', 'ASSIGNED', 'EMAIL_SENT', 'WAITING_REPLY', 'REPLY_READY', 'CLOSED', 'LOST'];
+// Status values must match backend allowed set (see `update_lead_status_gmail_id`).
+const statuses = ['new', 'waiting', 'confirmed', 'rejected', 'snoozed'];
 
 const LeadProfile = () => {
   const { email } = useParams();
@@ -210,7 +211,10 @@ const LeadProfile = () => {
 
   const updateStatus = async (nextStatus) => {
     if (!profile?.id) return;
-    await postLeadStatus({ gmail_id: profile.id, status: nextStatus });
+    await postLeadStatus({
+      gmail_id: profile.id,
+      status: String(nextStatus || '').toLowerCase(),
+    });
     const data = await getLeadProfile(decodedEmail);
     setProfile(data);
   };
@@ -240,8 +244,12 @@ const LeadProfile = () => {
           </div>
           <ButtonRow>
             <Button type="button" onClick={() => navigate(-1)}>Назад</Button>
-            <Select value={(profile.status || 'NEW').toUpperCase()} onChange={(e) => updateStatus(e.target.value)}>
-              {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+            <Select value={profile.status || 'waiting'} onChange={(e) => updateStatus(e.target.value)}>
+              {statuses.map((s) => (
+                <option key={s} value={s}>
+                  {s.toUpperCase()}
+                </option>
+              ))}
             </Select>
             <Button type="button" onClick={() => setShowMore((p) => !p)}>
               {showMore ? 'Сховати деталі' : 'Показати більше'}

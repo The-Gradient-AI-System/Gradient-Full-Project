@@ -2,7 +2,6 @@ from fastapi import APIRouter, Query, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional
-
 from service.leadService import get_current_user_role, assign_lead_to_user, get_user_leads, get_available_leads, get_all_leads_for_admin, get_assigned_leads_only, delete_lead_by_gmail_id
 from db import conn
 
@@ -120,7 +119,6 @@ def delete_lead(
     
     result = delete_lead_by_gmail_id(gmail_id, user_info)
     return result
-
 
 @router.get("/{email}")
 def get_lead_profile(email: str):

@@ -172,14 +172,10 @@ export const postGmailSync = () =>
 
   });
 
-
-
 export const getGmailLeads = (rangeDays = null) => {
   const qs = rangeDays ? `?range_days=${encodeURIComponent(rangeDays)}` : '';
   return request(`/gmail/leads${qs}`);
 };
-
-
 
 export const postLeadInsights = (payload) =>
 

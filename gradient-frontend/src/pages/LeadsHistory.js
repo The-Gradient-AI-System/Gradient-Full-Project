@@ -128,9 +128,23 @@ const StatusBar = styled.div`
 const StatusSegment = styled.span`
   height: 8px;
   border-radius: 999px;
-  background: ${({ $active }) => ($active ? 'linear-gradient(90deg, rgba(95,123,255,0.9), rgba(154,98,255,0.9))' : 'rgba(255,255,255,0.10)')};
-  border: 1px solid ${({ $active }) => ($active ? 'rgba(104,125,255,0.45)' : 'rgba(255,255,255,0.10)')};
+  background: ${({ $active, $color }) => ($active ? $color : 'rgba(255,255,255,0.10)')};
+  border: 1px solid ${({ $active, $color }) => ($active ? $color : 'rgba(255,255,255,0.10)')};
+  transition: all 0.2s ease;
+  position: relative;
+
+  &:hover {
+    transform: scaleY(1.3);
+    filter: brightness(1.2);
+  }
 `;
+
+const STATUS_STEPS = [
+  { label: 'Новий', color: '#ef4444' }, // Red
+  { label: 'Зібрана інформація', color: '#3b82f6' }, // Blue
+  { label: 'Потрібен дзвінок', color: '#f59e0b' }, // Yellow
+  { label: 'Опрацьований', color: '#10b981' }, // Green
+];
 
 const Meta = styled.div`
   margin-top: 0.35rem;
@@ -171,30 +185,31 @@ const getStatusProgress = (lead) => {
   const preprocessing = normalizeStatus(lead?.preprocessing_status);
   const hasReplyDraft = Boolean((lead?.preprocessed_replies || '').toString().trim());
 
-  // Prefer the newer DB-driven statuses when present
+  // Logic for 4 steps:
+  // 0: Новий
+  // 1: Зібрана інформація (Preprocessing done or assigned)
+  // 2: Потрібен дзвінок (Special intent or reply ready to be checked)
+  // 3: Опрацьований (Final decision made or email sent)
+
   const dbStatus = (lead?.status || '').toString().trim().toUpperCase();
-  if (['NEW', 'ASSIGNED', 'EMAIL_SENT', 'WAITING_REPLY', 'REPLY_READY', 'CLOSED', 'LOST'].includes(dbStatus)) {
-    if (dbStatus === 'NEW') return { step: 0, label: 'Новий' };
-    if (dbStatus === 'ASSIGNED') return { step: 1, label: 'Переглянуто' };
-    if (dbStatus === 'EMAIL_SENT') return { step: 2, label: 'Опрацьовано' };
-    if (dbStatus === 'WAITING_REPLY') return { step: 3, label: 'Відповіли' };
-    if (dbStatus === 'REPLY_READY') return { step: 3, label: 'Відповіли' };
-    if (dbStatus === 'CLOSED') return { step: 3, label: 'Закрито' };
-    if (dbStatus === 'LOST') return { step: 3, label: 'Втрачено' };
+
+  // Final states
+  if (['CONFIRMED', 'REJECTED', 'EMAIL_SENT', 'CLOSED', 'LOST'].includes(dbStatus) || status === 'confirmed' || status === 'rejected') {
+    return { step: 3, label: STATUS_STEPS[3].label };
   }
 
-  // Backward-compatible statuses from Automation flow
-  if (status === 'waiting') {
-    const reviewed = preprocessing === 'ready' || preprocessing === 'processing' || preprocessing === 'error';
-    return { step: reviewed ? 1 : 0, label: reviewed ? 'Переглянуто' : 'Новий' };
+  // Action required states
+  if (dbStatus === 'CALL_LEAD' || status === 'call_lead' || dbStatus === 'WAITING_REPLY' || dbStatus === 'REPLY_READY' || hasReplyDraft) {
+    return { step: 2, label: STATUS_STEPS[2].label };
   }
-  if (status === 'snoozed') return { step: 1, label: 'Переглянуто' };
-  if (status === 'confirmed') return { step: 3, label: 'Опрацьовано' };
-  if (status === 'rejected') return { step: 3, label: 'Опрацьовано' };
 
-  if (hasReplyDraft) return { step: 2, label: 'Опрацьовано' };
-  if (preprocessing === 'ready') return { step: 1, label: 'Переглянуто' };
-  return { step: 0, label: 'Новий' };
+  // Information gathered states
+  if (dbStatus === 'ASSIGNED' || preprocessing === 'ready' || status === 'snoozed') {
+    return { step: 1, label: STATUS_STEPS[1].label };
+  }
+
+  // Initial state
+  return { step: 0, label: STATUS_STEPS[0].label };
 };
 
 const scoreLead = (lead) => {
@@ -377,8 +392,13 @@ const LeadsHistory = () => {
                   <StatusRow>
                     <StatusLabel>{progress.label}</StatusLabel>
                     <StatusBar aria-label={`Статус: ${progress.label}`}>
-                      {[0, 1, 2, 3].map((idx) => (
-                        <StatusSegment key={idx} $active={idx <= progress.step} />
+                      {STATUS_STEPS.map((step, idx) => (
+                        <StatusSegment
+                          key={idx}
+                          $active={idx <= progress.step}
+                          $color={step.color}
+                          title={step.label}
+                        />
                       ))}
                     </StatusBar>
                   </StatusRow>

@@ -274,7 +274,9 @@ def _is_qualified(lead: dict[str, str]) -> bool:
 
 
 def build_leads_payload(limit: int | None = 120) -> dict[str, Any]:
+    # Try to use database first for better performance and stability
     try:
+        # Create a dummy admin user_info to reuse the robust DB logic
         dummy_admin = {"role": "admin", "id": -1}
         return build_leads_payload_from_db(limit, dummy_admin)
     except Exception as e:

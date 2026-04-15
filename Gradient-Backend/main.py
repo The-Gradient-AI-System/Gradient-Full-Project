@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.userRoutes import router as user_router
 from routes.gmailRoutes import router as gmail_router
 from routes.settingsRoutes import router as settings_router
+from routes import emailRoutes
 from routes.leadRoutes import router as lead_router
 from service.autosyncService import auto_sync_loop
 import asyncio
@@ -21,6 +22,7 @@ app.include_router(user_router)
 app.include_router(gmail_router)
 app.include_router(settings_router)
 app.include_router(lead_router)
+app.include_router(emailRoutes.router)
 
 @app.on_event("startup")
 async def startup():

@@ -80,6 +80,7 @@ def init_db():
     _ensure_column("gmail_messages", "preprocessing_status", "TEXT DEFAULT 'idle'")
     _ensure_column("gmail_messages", "preprocessed_replies", "TEXT")
     _ensure_column("gmail_messages", "preprocessed_at", "TIMESTAMP")
+    _ensure_column("lead_status_history", "rejection_reason", "TEXT")
 
     conn.execute("""
     CREATE TABLE IF NOT EXISTS lead_status_history (
@@ -89,6 +90,7 @@ def init_db():
         lead_name TEXT,
         status TEXT NOT NULL,
         assignee TEXT,
+        rejection_reason TEXT,
         FOREIGN KEY (gmail_id) REFERENCES gmail_messages (gmail_id)
     )
     """)

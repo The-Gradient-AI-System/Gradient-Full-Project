@@ -483,9 +483,7 @@ const Header = () => {
       <Nav>
 
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>Аналітика</NavLink>
-
         <NavLink to="/work-zone" className={({ isActive }) => (isActive ? 'active' : '')}>Робоча зона</NavLink>
-
       </Nav>
 
       <UserMenu ref={menuRef}>

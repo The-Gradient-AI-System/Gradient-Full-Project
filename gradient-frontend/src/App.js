@@ -224,7 +224,8 @@ function InnerApp() {
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<AnalyticsManager />} />
-            <Route path="/automation" element={<Automation />} />
+            <Route path="/work-zone" element={<Automation />} />
+            <Route path="/automation" element={<Navigate to="/work-zone" replace />} />
             <Route path="/lead/:email" element={<LeadProfile />} />
             <Route path="/leads-history" element={<LeadsHistory />} />
             <Route path="/profile" element={<Profile />} />

@@ -256,8 +256,8 @@ def get_lead_profile(email: str = Query(...)):
         "company": latest[8] or latest[12] or "",
         "role": latest[14] or "",
         "status": latest[1] or "NEW",
-        "pending_review": False,  # Can be updated based on your logic
-        "is_priority": False,     # Can be updated based on your logic
+        "pending_review": False,
+        "is_priority": False,
         "emails": formatted_emails
     }
 
