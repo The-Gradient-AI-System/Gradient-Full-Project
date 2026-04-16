@@ -6,7 +6,7 @@ DB_PATH = BASE_DIR / "db" / "database.duckdb"
 
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-conn = duckdb.connect(DB_PATH)
+conn = duckdb.connect(str(DB_PATH))
 
 def _ensure_column(table: str, column: str, definition: str) -> None:
     exists = conn.execute(
