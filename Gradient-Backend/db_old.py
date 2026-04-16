@@ -20,6 +20,7 @@ def _ensure_column(table: str, column: str, definition: str) -> None:
     if not exists:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+
 def init_db():
     print("[DB] Initializing database...")
     
@@ -82,7 +83,7 @@ def init_db():
     _ensure_column("gmail_messages", "preprocessed_replies", "TEXT")
     _ensure_column("gmail_messages", "preprocessed_at", "TIMESTAMP")
 
-    # Створюємо таблицю lead_status_history з rejection_reason всередині
+    # Створюємо таблицю ПЕРЕД тим, як перевіряти колонки
     conn.execute("""
     CREATE TABLE IF NOT EXISTS lead_status_history (
         id TEXT PRIMARY KEY,
@@ -96,7 +97,11 @@ def init_db():
     )
     """)
     
-    print("[DB] lead_status_history table created with rejection_reason column")
+    print("[DB] lead_status_history table created")
+
+    # Видаляємо _ensure_column для rejection_reason, оскільки вона вже є в CREATE TABLE
+    # _ensure_column("lead_status_history", "rejection_reason", "TEXT")
+    print("[DB] rejection_reason column already exists in table definition")
 
     conn.execute("""
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -108,16 +113,28 @@ def init_db():
     conn.execute(
         """
         INSERT INTO app_settings (key, value)
-        VALUES 
-            ('reply_style', 'semi_official'),
-            ('auto_sync_enabled', 'true'),
-            ('sync_interval_minutes', '5')
-        ON CONFLICT (key) DO NOTHING
-        """
+        SELECT * FROM (VALUES
+            ('reply_top_block', ?),
+            ('reply_bottom_block', ?),
+            ('reply_style_official', ?),
+            ('reply_style_semi_official', ?),
+            ('reply_prompt_follow_up', ?),
+            ('reply_prompt_recap', ?),
+            ('reply_prompt_quick', ?)
+        ) AS defaults(key, value)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM app_settings WHERE app_settings.key = defaults.key
+        )
+        """,
+        [
+            "",
+            "",
+            "Tone: Official. Write formally, concise, confident, and business-like. Avoid slang or overly casual phrasing.",
+            "Tone: Semi-official. Write friendly and professional, slightly warm, but still business appropriate.",
+            "Act as a Business Development Manager. Draft a concise follow-up email after an intro call. Use only factual details provided. Keep within 140 words and write in English. The structure must cover: greeting with [NAME]; gratitude referencing [TOPIC DISCUSSED]; phrase 'As promised, I'm sharing [LINK_TO_MATERIAL]'; next steps mentioning [NEXT_CONTACT_DATE]; professional signature placeholder [YOUR_NAME].",
+            "Act as a Sales Expert. Prepare a recap & proposal email after a qualification call. Use only supplied information. Keep within 140 words and write in English. The structure must cover: greeting with [CLIENT_NAME]; paragraph recognising pains [CLIENT_PAIN_POINTS]; section describing our solution [SOLUTION_OVERVIEW]; bullet list for three proofs each with [PROJECT_NAME] and [RESULT]; closing call-to-action suggesting [NEXT_STEP].",
+            "Act as a Sales Assistant. Write a very short, friendly reply (max 60 words). Keep it clear, warm, and action-oriented. Use only facts from the provided context and do not invent details.",
+        ],
     )
 
-    conn.commit()
-    print("[DB] Database initialization completed successfully!")
-
-# Initialize database immediately
 init_db()
