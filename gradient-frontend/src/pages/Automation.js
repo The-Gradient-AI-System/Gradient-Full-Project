@@ -1834,7 +1834,7 @@ const Automation = () => {
         setStatusError(error instanceof Error ? error.message : 'Не вдалося оновити статус.');
       }
     },
-    [selectedLead, closeModal, refresh, pushNotification, closeLocalModal]
+    [selectedLead, refresh, pushNotification, closeLocalModal]
   );
 
   const handleConfirmClick = useCallback(async () => {

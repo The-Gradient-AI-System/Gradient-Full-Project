@@ -196,7 +196,6 @@ export const AuthProvider = ({ children }) => {
       try {
         const leadsPayload = await getGmailLeads();
         const leads = leadsPayload?.leads ?? [];
-        const waitingLeads = leads.filter((lead) => ((lead.status || 'waiting').toLowerCase()) === 'waiting');
         const sortedLeads = [...leads]
           .map((lead) => ({
             ...lead,
@@ -247,7 +246,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pushNotification]);
 
   const updateLeadSnapshot = useCallback(
     (payload, { isManualRefresh = false } = {}) => {

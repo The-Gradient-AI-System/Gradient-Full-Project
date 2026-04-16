@@ -176,7 +176,6 @@ const SuccessBadge = styled.span`
 `;
 
 const Profile = () => {
-  const theme = useTheme();
   const fileInputRef = useRef(null);
   const previewUrlRef = useRef(null);
   const [avatar, setAvatar] = useState(userAvatar);
