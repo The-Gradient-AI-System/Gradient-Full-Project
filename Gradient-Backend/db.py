@@ -22,6 +22,8 @@ def _ensure_column(table: str, column: str, definition: str) -> None:
 
 
 def init_db():
+    print("[DB] Initializing database...")
+    
     conn.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY,
@@ -81,6 +83,7 @@ def init_db():
     _ensure_column("gmail_messages", "preprocessed_replies", "TEXT")
     _ensure_column("gmail_messages", "preprocessed_at", "TIMESTAMP")
 
+    # Створюємо таблицю ПЕРЕД тим, як перевіряти колонки
     conn.execute("""
     CREATE TABLE IF NOT EXISTS lead_status_history (
         id TEXT PRIMARY KEY,
@@ -93,8 +96,12 @@ def init_db():
         FOREIGN KEY (gmail_id) REFERENCES gmail_messages (gmail_id)
     )
     """)
+    
+    print("[DB] lead_status_history table created")
 
+    # Тепер перевіряємо/додаємо колонку rejection_reason
     _ensure_column("lead_status_history", "rejection_reason", "TEXT")
+    print("[DB] rejection_reason column ensured")
 
     conn.execute("""
     CREATE TABLE IF NOT EXISTS app_settings (
