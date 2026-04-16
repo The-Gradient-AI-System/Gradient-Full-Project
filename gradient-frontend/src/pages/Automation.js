@@ -1627,28 +1627,6 @@ const Automation = () => {
     );
   }, [selectedInsights, selectedLead]);
 
-  const closeModal = useCallback(() => {
-    setSelectedLead(null);
-    setShowReader(false);
-    setShowReplyComposer(false);
-    setInsightsError(null);
-    setReplyOptions({ quick: '', follow_up: '', recap: '' });
-    setReplyOptionsByStyle({ official: null, semi_official: null });
-    setSelectedReplyKey('');
-    setReplyDraft('');
-    setReplyError(null);
-    setReplyStyle('semi_official');
-    setReplyAttachments([]);
-  }, []);
-
-  const toggleRangeMenu = useCallback(() => {
-    setRangeMenuOpen((prev) => !prev);
-  }, []);
-
-  const toggleReader = useCallback(() => {
-    setShowReader((prev) => !prev);
-  }, []);
-
   const closeReplyComposer = useCallback(() => {
     setShowReplyComposer(false);
     setReplyDraft('');
@@ -1696,6 +1674,14 @@ const Automation = () => {
   const handleSelectRange = (value) => {
     setRangeFilter(value);
     setRangeMenuOpen(false);
+  };
+
+  const toggleRangeMenu = () => {
+    setRangeMenuOpen(prev => !prev);
+  };
+
+  const toggleReader = () => {
+    setShowReader(prev => !prev);
   };
 
   const handleRowKeyDown = (event, lead) => {

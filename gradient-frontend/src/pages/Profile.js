@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import styled, { useTheme } from 'styled-components';
+import styled from 'styled-components';
 import { FiCamera, FiEye, FiEyeOff } from 'react-icons/fi';
 import userAvatar from '../assets/user.jpg';
 
