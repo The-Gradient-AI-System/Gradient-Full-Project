@@ -7,6 +7,8 @@ from typing import Any
 
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+
 from dotenv import load_dotenv
 from db import conn
 
@@ -25,16 +27,34 @@ SCOPES = [
 
 
 def _get_sheet_service():
-    if not TOKEN_FILE.exists():
-        raise FileNotFoundError(
-            f"token.json not found at {TOKEN_FILE}. "
-            "Run auth_init.py first."
-        )
+    creds = None
+    
+    # 1. Спершу пробуємо прочитати токен зі змінних середовища Render
+    token_json_str = os.getenv("GMAIL_TOKEN_JSON")
+    
+    if token_json_str:
+        try:
+            token_info = json.loads(token_json_str)
+            creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+        except Exception as e:
+            print(f"[Помилка парсингу GMAIL_TOKEN_JSON]: {e}")
+            
+    # 2. Якщо в середовищі токена немає, пробуємо знайти локальний файл (для розробки на ПК)
+    elif TOKEN_FILE.exists():
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
 
-    creds = Credentials.from_authorized_user_file(
-        TOKEN_FILE,
-        SCOPES
-    )
+    # 3. Перевіряємо валідність токена та оновлюємо його, якщо час вийшов
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                raise RuntimeError(f"Не вдалося оновити токен: {e}")
+        else:
+            raise FileNotFoundError(
+                "Токен не знайдено! Додайте змінну GMAIL_TOKEN_JSON на Render "
+                "або створіть credentials/token.json локально."
+            )
 
     return build("sheets", "v4", credentials=creds)
 
