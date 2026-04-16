@@ -3,6 +3,7 @@ import {
   clearAuthToken,
   loadAuthToken,
   loginRequest,
+  registerRequest,
   setAuthToken,
   getGmailLeads,
 } from '../api/client';
@@ -248,6 +249,37 @@ export const AuthProvider = ({ children }) => {
     }
   }, [pushNotification]);
 
+  const register = useCallback(async ({ email, password }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = {
+        email,
+        password,
+      };
+
+      const response = await registerRequest(payload);
+      
+      if (!response?.message) {
+        throw new Error('Не вдалося створити акаунт.');
+      }
+
+      pushNotification({
+        variant: 'success',
+        title: 'Акаунт створено',
+        message: 'Тепер ви можете увійти в систему.',
+      });
+
+      return { success: true };
+    } catch (err) {
+      const message = err?.message || 'Помилка реєстрації.';
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  }, [pushNotification]);
+
   const updateLeadSnapshot = useCallback(
     (payload, { isManualRefresh = false } = {}) => {
       const snapshot = payload ?? loginSnapshotRef.current ?? null;
@@ -281,6 +313,7 @@ export const AuthProvider = ({ children }) => {
       error,
       isAuthenticated: Boolean(token),
       login,
+      register,
       logout,
       clearError: () => setError(null),
       notifications,
@@ -295,6 +328,7 @@ export const AuthProvider = ({ children }) => {
       loading,
       error,
       login,
+      register,
       logout,
       notifications,
       pushNotification,
