@@ -254,6 +254,7 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     try {
       const payload = {
+        username: email,
         email,
         password,
       };
