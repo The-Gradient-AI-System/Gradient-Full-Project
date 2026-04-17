@@ -1406,7 +1406,13 @@ const Automation = () => {
   const [replyAttachments, setReplyAttachments] = useState([]);
   const fileInputRef = useRef(null);
 
-  const leads = useMemo(() => data?.leads ?? [], [data]);
+  const leads = useMemo(() => {
+    const leadsData = data?.leads ?? [];
+    console.log('🔍 Debug - data:', data);
+    console.log('🔍 Debug - leads:', leadsData);
+    console.log('🔍 Debug - leads count:', leadsData.length);
+    return leadsData;
+  }, [data]);
 
   const orderedLeads = useMemo(() => {
     const cleaned = (leads || []).filter((lead) => !isEmptyLeadRow(lead));
