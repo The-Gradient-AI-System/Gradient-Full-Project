@@ -7,6 +7,7 @@ import AnalyticsManager from './pages/AnalyticsManager';
 import Automation from './pages/Automation';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
+import ManagerManagement from './pages/ManagerManagement';
 import LeadProfile from './pages/LeadProfile';
 import LeadsHistory from './pages/LeadsHistory';
 import Login from './pages/Login';
@@ -230,6 +231,7 @@ function InnerApp() {
             <Route path="/leads-history" element={<LeadsHistory />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/manager-management" element={<ManagerManagement />} />
           </Route>
         </Routes>
       </Router>

@@ -1,4 +1,4 @@
-from db import conn
+from db import conn, db_lock
 from datetime import datetime
 from fastapi import HTTPException, status
 from jose import jwt, JWTError
@@ -19,10 +19,11 @@ def get_current_user_role(token: str) -> dict:
             )
         
         # Get user info from database
-        user = conn.execute(
-            "SELECT id, username, role FROM users WHERE username = ?",
-            [username]
-        ).fetchone()
+        with db_lock:
+            user = conn.execute(
+                "SELECT id, username, role, is_active FROM users WHERE username = ?",
+                [username]
+            ).fetchone()
         
         if not user:
             raise HTTPException(
@@ -30,6 +31,12 @@ def get_current_user_role(token: str) -> dict:
                 detail="User not found"
             )
         
+        if user[3] is not None and not bool(user[3]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User is inactive"
+            )
+
         return {"id": user[0], "username": user[1], "role": user[2]}
     except JWTError:
         raise HTTPException(
@@ -40,10 +47,11 @@ def get_current_user_role(token: str) -> dict:
 def assign_lead_to_user(gmail_id: str, user_info: dict):
     """Assign a lead to a user"""
     # Check if lead exists
-    lead = conn.execute(
-        "SELECT gmail_id FROM gmail_messages WHERE gmail_id = ?",
-        [gmail_id]
-    ).fetchone()
+    with db_lock:
+        lead = conn.execute(
+            "SELECT gmail_id FROM gmail_messages WHERE gmail_id = ?",
+            [gmail_id]
+        ).fetchone()
     
     if not lead:
         raise HTTPException(
@@ -52,10 +60,11 @@ def assign_lead_to_user(gmail_id: str, user_info: dict):
         )
     
     # Check if lead is already assigned
-    existing = conn.execute(
-        "SELECT assigned_to FROM gmail_messages WHERE gmail_id = ? AND assigned_to IS NOT NULL",
-        [gmail_id]
-    ).fetchone()
+    with db_lock:
+        existing = conn.execute(
+            "SELECT assigned_to FROM gmail_messages WHERE gmail_id = ? AND assigned_to IS NOT NULL",
+            [gmail_id]
+        ).fetchone()
     
     if existing:
         raise HTTPException(
@@ -64,29 +73,32 @@ def assign_lead_to_user(gmail_id: str, user_info: dict):
         )
     
     # Assign lead to user and update status to ASSIGNED
-    conn.execute(
-        "UPDATE gmail_messages SET assigned_to = ?, assigned_at = ?, status = 'ASSIGNED' WHERE gmail_id = ?",
-        [user_info["id"], datetime.now(), gmail_id]
-    )
+    with db_lock:
+        conn.execute(
+            "UPDATE gmail_messages SET assigned_to = ?, assigned_at = ?, status = 'ASSIGNED' WHERE gmail_id = ?",
+            [user_info["id"], datetime.now(), gmail_id]
+        )
     
     # Add status history entry
     import uuid
     history_id = str(uuid.uuid4())
-    lead_data = conn.execute(
-        "SELECT full_name FROM gmail_messages WHERE gmail_id = ?",
-        [gmail_id]
-    ).fetchone()
+    with db_lock:
+        lead_data = conn.execute(
+            "SELECT full_name FROM gmail_messages WHERE gmail_id = ?",
+            [gmail_id]
+        ).fetchone()
     lead_name = lead_data[0] if lead_data else None
     
-    conn.execute(
-        """
-        INSERT INTO lead_status_history (id, gmail_id, status, assignee, lead_name)
-        VALUES (?, ?, 'ASSIGNED', ?, ?)
-        """,
-        [history_id, gmail_id, user_info["username"], lead_name]
-    )
-    
-    conn.commit()
+    with db_lock:
+        conn.execute(
+            """
+            INSERT INTO lead_status_history (id, gmail_id, status, assignee, lead_name)
+            VALUES (?, ?, 'ASSIGNED', ?, ?)
+            """,
+            [history_id, gmail_id, user_info["username"], lead_name]
+        )
+        
+        conn.commit()
     return {"message": "Lead assigned successfully", "gmail_id": gmail_id, "assigned_to": user_info["username"], "status": "ASSIGNED"}
 
 def get_user_leads(user_info: dict, limit: int = 120):
@@ -111,48 +123,24 @@ def get_user_leads(user_info: dict, limit: int = 120):
             ORDER BY gm.created_at DESC
             LIMIT ?
         """
-        leads = conn.execute(query, [limit]).fetchall()
+        with db_lock:
+            leads = conn.execute(query, [limit]).fetchall()
         
     elif user_role == "manager":
-        # Check if manager has an active assigned lead (status = 'ASSIGNED')
-        check_query = """
-            SELECT gmail_id FROM gmail_messages 
-            WHERE assigned_to = ? AND status = 'ASSIGNED'
+        # Manager sees all leads with assignment info (same as admin)
+        query = """
+            SELECT 
+                gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
+                gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
+                gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
+                gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
+                u.username as assigned_username, u.role as assigned_role
+            FROM gmail_messages gm
+            LEFT JOIN users u ON gm.assigned_to = u.id
+            ORDER BY gm.created_at DESC
+            LIMIT ?
         """
-        assigned_leads = conn.execute(check_query, [user_id]).fetchall()
-        
-        if assigned_leads:
-            # Show only assigned leads
-            assigned_ids = [lead[0] for lead in assigned_leads]
-            placeholders = ','.join(['?' for _ in assigned_ids])
-            query = f"""
-                SELECT 
-                    gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
-                    gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
-                    gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
-                    gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
-                    u.username as assigned_username, u.role as assigned_role
-                FROM gmail_messages gm
-                LEFT JOIN users u ON gm.assigned_to = u.id
-                WHERE gm.gmail_id IN ({placeholders})
-                ORDER BY gm.created_at DESC
-            """
-            leads = conn.execute(query, assigned_ids).fetchall()
-        else:
-            # Show all available leads
-            query = """
-                SELECT 
-                    gm.gmail_id, gm.status, gm.first_name, gm.last_name, gm.full_name, gm.email, gm.subject, 
-                    gm.received_at, gm.company, gm.body, gm.phone, gm.website, gm.company_name, gm.company_info,
-                    gm.person_role, gm.person_links, gm.person_location, gm.person_experience, gm.person_summary,
-                    gm.person_insights, gm.company_insights, gm.assigned_to, gm.assigned_at, gm.synced_at, gm.created_at,
-                    u.username as assigned_username, u.role as assigned_role
-                FROM gmail_messages gm
-                LEFT JOIN users u ON gm.assigned_to = u.id
-                ORDER BY gm.created_at DESC
-                LIMIT ?
-            """
-            leads = conn.execute(query, [limit]).fetchall()
+        leads = conn.execute(query, [limit]).fetchall()
     else:
         return []
     

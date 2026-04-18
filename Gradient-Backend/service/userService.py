@@ -1,4 +1,4 @@
-from db import conn
+from db import conn, db_lock
 from hashPswd import hash_password, verify_password
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
@@ -17,10 +17,11 @@ except ValueError:
     ACCESS_TOKEN_EXPIRE_HOURS = 2
 
 def register_user(user):
-    exists = conn.execute(
-        "SELECT 1 FROM users WHERE username = ? OR email = ?",
-        [user.username, user.email]
-    ).fetchone()
+    with db_lock:
+        exists = conn.execute(
+            "SELECT 1 FROM users WHERE username = ? OR email = ?",
+            [user.username, user.email]
+        ).fetchone()
 
     if exists:
         raise HTTPException(
@@ -30,14 +31,17 @@ def register_user(user):
 
     hashed_pwd = hash_password(user.password)
 
-    next_id = conn.execute(
-        "SELECT COALESCE(MAX(id), 0) + 1 FROM users"
-    ).fetchone()[0]
+    with db_lock:
+        next_id = conn.execute(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM users"
+        ).fetchone()[0]
 
-    conn.execute(
-        "INSERT INTO users (id, username, email, password) VALUES (?, ?, ?, ?)",
-        [next_id, user.username, user.email, hashed_pwd]
-    )
+    with db_lock:
+        conn.execute(
+            "INSERT INTO users (id, username, email, password) VALUES (?, ?, ?, ?)",
+            [next_id, user.username, user.email, hashed_pwd]
+        )
+        conn.commit()
 
     return {"msg": "User registered successfully"}
 
@@ -53,10 +57,11 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 def login_user(user):
     username = user.username or user.email
 
-    row = conn.execute(
-        "SELECT username, password, role FROM users WHERE username = ? OR email = ?",
-        [username, user.email or username]
-    ).fetchone()
+    with db_lock:
+        row = conn.execute(
+            "SELECT username, password, role, is_active FROM users WHERE username = ? OR email = ?",
+            [username, user.email or username]
+        ).fetchone()
 
     if not row:
         raise HTTPException(
@@ -64,7 +69,13 @@ def login_user(user):
             detail="Invalid username or password"
         )
 
-    stored_username, hashed_password, user_role = row
+    stored_username, hashed_password, user_role, is_active = row
+
+    if is_active is not None and not bool(is_active):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is deactivated"
+        )
 
     if not verify_password(user.password, hashed_password):
         raise HTTPException(

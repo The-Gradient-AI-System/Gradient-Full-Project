@@ -370,6 +370,8 @@ export const AuthProvider = ({ children }) => {
 
       const receivedToken = response?.access_token;
 
+      const userRole = response?.role || 'manager';
+
 
 
       if (!receivedToken) {
@@ -384,7 +386,7 @@ export const AuthProvider = ({ children }) => {
 
       setToken(receivedToken);
 
-      setUser({ email });
+      setUser({ email, role: userRole });
 
 
 

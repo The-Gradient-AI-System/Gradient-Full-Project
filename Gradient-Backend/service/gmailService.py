@@ -4,7 +4,7 @@ from pathlib import Path
 import base64
 import json
 
-from db import conn
+from db import conn, db_lock
 from service.aiService import analyze_email
 from service.leadIntentService import detect_sales_intent
 
@@ -58,19 +58,21 @@ def get_gmail_service():
 
 
 def is_processed(msg_id: str) -> bool:
-    result = conn.execute(
-        "SELECT 1 FROM processed_emails WHERE gmail_id = ?",
-        [msg_id]
-    ).fetchone()
+    with db_lock:
+        result = conn.execute(
+            "SELECT 1 FROM processed_emails WHERE gmail_id = ?",
+            [msg_id]
+        ).fetchone()
     return result is not None
 
 
 def mark_as_processed(msg_id: str):
-    conn.execute(
-        "INSERT OR IGNORE INTO processed_emails (gmail_id) VALUES (?)",
-        [msg_id]
-    )
-    conn.commit()
+    with db_lock:
+        conn.execute(
+            "INSERT OR IGNORE INTO processed_emails (gmail_id) VALUES (?)",
+            [msg_id]
+        )
+        conn.commit()
 
 
 def extract_email(from_header: str) -> str:
@@ -121,34 +123,37 @@ def _extract_body(payload: dict) -> str:
 
 
 def _store_message(gmail_id: str, values: list[str]) -> None:
-    existing = conn.execute(
-        "SELECT synced_at FROM gmail_messages WHERE gmail_id = ?",
-        [gmail_id]
-    ).fetchone()
+    with db_lock:
+        existing = conn.execute(
+            "SELECT synced_at FROM gmail_messages WHERE gmail_id = ?",
+            [gmail_id]
+        ).fetchone()
 
     columns_sql = ", ".join(_MESSAGE_VALUE_COLUMNS)
     placeholders = ", ".join(["?"] * len(_MESSAGE_VALUE_COLUMNS))
 
     if existing is None:
-        conn.execute(
-            f"""
-            INSERT INTO gmail_messages (gmail_id, {columns_sql})
-            VALUES (?, {placeholders})
-            """,
-            [gmail_id, *values]
-        )
-        conn.commit()
+        with db_lock:
+            conn.execute(
+                f"""
+                INSERT INTO gmail_messages (gmail_id, {columns_sql})
+                VALUES (?, {placeholders})
+                """,
+                [gmail_id, *values]
+            )
+            conn.commit()
     else:
         assignments = ", ".join(f"{col} = ?" for col in _MESSAGE_VALUE_COLUMNS)
-        conn.execute(
-            f"""
-            UPDATE gmail_messages
-            SET {assignments}, synced_at = NULL
-            WHERE gmail_id = ?
-            """,
-            [*values, gmail_id]
-        )
-    conn.commit()
+        with db_lock:
+            conn.execute(
+                f"""
+                UPDATE gmail_messages
+                SET {assignments}, synced_at = NULL
+                WHERE gmail_id = ?
+                """,
+                [*values, gmail_id]
+            )
+            conn.commit()
 
 
 def get_unsynced_message_rows(limit: int | None = None) -> list[tuple[str, list[str]]]:
@@ -163,7 +168,8 @@ def get_unsynced_message_rows(limit: int | None = None) -> list[tuple[str, list[
     if limit is not None:
         query += f" LIMIT {int(limit)}"
 
-    rows = conn.execute(query).fetchall()
+    with db_lock:
+        rows = conn.execute(query).fetchall()
 
     result: list[tuple[str, list[str]]] = []
     for row in rows:
@@ -179,15 +185,16 @@ def mark_messages_synced(gmail_ids: list[str]) -> None:
         return
 
     placeholders = ", ".join(["?"] * len(gmail_ids))
-    conn.execute(
-        f"""
-        UPDATE gmail_messages
-        SET synced_at = CURRENT_TIMESTAMP
-        WHERE gmail_id IN ({placeholders})
-        """,
-        gmail_ids
-    )
-    conn.commit()
+    with db_lock:
+        conn.execute(
+            f"""
+            UPDATE gmail_messages
+            SET synced_at = CURRENT_TIMESTAMP
+            WHERE gmail_id IN ({placeholders})
+            """,
+            gmail_ids
+        )
+        conn.commit()
 
 
 def _normalize_cell(value):

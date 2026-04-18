@@ -1,6 +1,6 @@
 from typing import Dict
 
-from db import conn
+from db import conn, db_lock
 
 ReplyPrompts = Dict[str, str]
 
@@ -14,12 +14,15 @@ STYLE_SEMI_OFFICIAL_KEY = "reply_style_semi_official"
 
 
 def get_setting(key: str) -> str | None:
-    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", [key]).fetchone()
+    with db_lock:
+        row = conn.execute("SELECT value FROM app_settings WHERE key = ?", [key]).fetchone()
     return row[0] if row else None
 
 
 def set_setting(key: str, value: str) -> None:
-    conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", [key, value])
+    with db_lock:
+        conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", [key, value])
+        conn.commit()
 
 
 def get_reply_prompts() -> ReplyPrompts:

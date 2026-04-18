@@ -518,7 +518,7 @@ const Header = () => {
 
                 <h4>{user?.email || 'User'}</h4>
 
-                <span>{user?.role === 'admin' ? 'Admin' : 'Manager'}</span>
+                <span>{user?.role === 'admin' ? 'Адміністратор' : 'Менеджер'}</span>
 
               </UserTopInfo>
 
@@ -550,17 +550,37 @@ const Header = () => {
 
               </MenuItem>
 
-              <MenuItem>
+              {user?.role === 'admin' && (
 
-                <Link to="/settings" onClick={closeMenu}>
+                <MenuItem>
 
-                  <IconCircle>⚙️</IconCircle>
+                  <Link to="/settings" onClick={closeMenu}>
 
-                  <span>Налаштування</span>
+                    <IconCircle>⚙️</IconCircle>
 
-                </Link>
+                    <span>Налаштування</span>
 
-              </MenuItem>
+                  </Link>
+
+                </MenuItem>
+
+              )}
+
+              {user?.role === 'admin' && (
+
+                <MenuItem>
+
+                  <Link to="/manager-management" onClick={closeMenu}>
+
+                    <IconCircle>🧑‍💼</IconCircle>
+
+                    <span>Керування менеджерами</span>
+
+                  </Link>
+
+                </MenuItem>
+
+              )}
 
               <MenuItem className="logout">
 

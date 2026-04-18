@@ -234,6 +234,36 @@ export const updateReplyPrompts = (payload) =>
     body: JSON.stringify(payload),
   });
 
+export const getManagers = () => request('/admin/managers');
+
+export const createManager = (payload) =>
+  request('/admin/managers', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const setManagerStatus = (managerId, payload) =>
+  request(`/admin/managers/${encodeURIComponent(managerId)}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+
+export const resetManagerPassword = (managerId, payload) =>
+  request(`/admin/managers/${encodeURIComponent(managerId)}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const deleteManager = (managerId, confirmUsername) =>
+  request(
+    `/admin/managers/${encodeURIComponent(managerId)}?confirm_username=${encodeURIComponent(
+      confirmUsername || ''
+    )}`,
+    {
+    method: 'DELETE',
+    }
+  );
+
 export const sendEmailWithAttachments = (payload) => {
   const formData = new FormData();
 

@@ -1,5 +1,6 @@
 import duckdb
 from pathlib import Path
+import threading
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "db" / "database.duckdb"
@@ -7,6 +8,8 @@ DB_PATH = BASE_DIR / "db" / "database.duckdb"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 conn = duckdb.connect(DB_PATH)
+
+db_lock = threading.RLock()
 
 def _ensure_column(table: str, column: str, definition: str) -> None:
     exists = conn.execute(
@@ -28,9 +31,12 @@ def init_db():
         username TEXT UNIQUE NOT NULL,
         email TEXT NOT NULL,
         password TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'manager' CHECK (role IN ('admin', 'manager'))
+        role TEXT NOT NULL DEFAULT 'manager' CHECK (role IN ('admin', 'manager')),
+        is_active BOOLEAN NOT NULL DEFAULT TRUE
     )
     """)
+
+    _ensure_column("users", "is_active", "BOOLEAN DEFAULT TRUE")
 
     conn.execute("""
     CREATE TABLE IF NOT EXISTS processed_emails (
